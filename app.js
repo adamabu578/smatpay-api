@@ -57,7 +57,7 @@ const prefix = process.env.NODE_ENV != 'development' ? 'vtu' : '';
 
 app.use(`/${prefix}`, router);
 
-const port = 3005;
+const port = 3003;
 app.listen(port, () => {
   console.log(`Running on port: ${port}`);
 })
