@@ -1,0 +1,54 @@
+const { default: mongoose } = require("mongoose");
+
+const transactionSchema = new mongoose.Schema({
+    userId: {
+        type: String,
+        required: true,
+    },
+    transactionId: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    serviceId: {
+        type: mongoose.Types.ObjectId,
+        required: true,
+    },
+    recipient: {
+        type: String,
+        required: true,
+    },
+    unitPrice: {
+        type: Number,
+        required: true,
+    },
+    quantity: {
+        type: Number,
+        default: 1,
+    },
+    commission: {
+        type: Number,
+    },
+    discount: {
+        type: Number,
+        default: 0,
+    },
+    totalAmount: {
+        type: Number,
+        default: 1,
+    },
+    scheduleId: {
+        type: mongoose.Types.ObjectId,
+    },
+    status: {
+        type: String,
+        default: 'pending'
+    },
+    tags: {
+        type: [],
+    }
+});
+
+const Transaction = mongoose.model('transactions', transactionSchema);
+
+module.exports = Transaction;
