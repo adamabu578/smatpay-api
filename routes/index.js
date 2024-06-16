@@ -26,6 +26,6 @@ router.post('/signup', base.signUp);
 // router.get('/chat', authAdmin, admin.createChat);
 
 router.post('/topup', base.topup);
-router.post('/callback', base.topup);
+router.post('/callback', base.callback);
 
 module.exports = router;

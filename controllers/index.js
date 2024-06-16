@@ -44,6 +44,7 @@ exports.topup = catchAsync(async (req, res, next) => {
 });
 
 exports.callback = catchAsync(async (req, res, next) => {
+  res.status(200).json({ 'response': 'success' });
   console.log('callback', ':::', req.body);
 });
 
