@@ -2,10 +2,10 @@
   "name": "vtu-api",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development nodemon index.js",
-    "start": "node index.js"
+    "dev": "cross-env NODE_ENV=development nodemon app.js",
+    "start": "node app.js"
   },
   "keywords": [],
   "author": "",
