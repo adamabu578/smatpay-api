@@ -94,7 +94,7 @@ exports.topup = catchAsync(async (req, res, next) => {
           headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
           body: JSON.stringify({
             request_id: ref,
-            serviceID: arr[i].newtork.toLowerCase(),
+            serviceID: arr[i].network.toLowerCase(),
             amount: arr[i].price,
             phone: arr[i].msisdn
           }),
