@@ -1,9 +1,14 @@
-exports.ACCOUNT_ROLE = {
-    ADMIN: 'admin',
-    USER: 'user',
+exports.pExCheck = (reqParams, array) => {
+    let resp = [];
+    reqParams = JSON.parse(JSON.stringify(reqParams));
+    array.forEach(param => {
+        if (!reqParams.hasOwnProperty(param) || reqParams[param] == "") {
+            resp.push(param);
+        }
+    });
+    return resp;
 }
 
-exports.STAFF_POSITION = {
-    TEACHER: 'teacher',
-    OTHERS: 'others',
+exports.isLive = (secretKey)=>{
+    return secretKey?.startsWith('lk');
 }

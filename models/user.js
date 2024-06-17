@@ -1,4 +1,5 @@
 const { default: mongoose } = require("mongoose");
+const { uid } = require("uid");
 
 const userSchema = new mongoose.Schema({
     firstName: {
@@ -15,7 +16,7 @@ const userSchema = new mongoose.Schema({
         unique: true
     },
     phone: {
-        type: Number,
+        type: String,
         required: true,
         unique: true
     },
@@ -27,10 +28,26 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: 'pending'
     },
+    testKey: {
+        type: String,
+        required: true,
+        unique: true,
+        default: 'tk' + uid(20),
+    },
+    liveKey: {
+        type: String,
+        required: true,
+        unique: true,
+        default: 'lk' + uid(20),
+    },
     password: {
         type: String,
         required: true,
     },
+}, {
+    timestamps: {
+        updatedAt: false,
+    }
 });
 
 const User = mongoose.model('users', userSchema);

@@ -2,7 +2,7 @@ const { default: mongoose } = require("mongoose");
 
 const transactionSchema = new mongoose.Schema({
     userId: {
-        type: String,
+        type: mongoose.Types.ObjectId,
         required: true,
     },
     transactionId: {
@@ -44,8 +44,15 @@ const transactionSchema = new mongoose.Schema({
         type: String,
         default: 'pending'
     },
+    statusDesc: {
+        type: String,
+    },
     tags: {
         type: [],
+    }
+}, {
+    timestamps: {
+        updatedAt: false,
     }
 });
 

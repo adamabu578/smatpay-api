@@ -1,7 +1,9 @@
-const AppError = require('../utils/AppError');
-const catchAsync = require('../utils/catchAsync')
-const jwt = require('jsonwebtoken')
-const { ACCOUNT_ROLE } = require('../helpers/utils')
+const jwt = require('jsonwebtoken');
+
+const AppError = require('../helpers/AppError');
+const catchAsync = require('../helpers/catchAsync');
+const { isLive } = require('../helpers/utils');
+const User = require('../models/user');
 
 class Auth {
   secret = process.env.AUTH_SECRET;
@@ -13,51 +15,33 @@ class Auth {
   };
 
   auth = catchAsync(async (req, res, next) => {
-    if (req?.session?.token) {
-      const token = req.session.token;
-      const decoded = jwt.verify(token, this.secret);
-      req.user = decoded.payload;
+    if (req?.headers?.authorization && req?.headers?.authorization.startsWith('Bearer')) {
+      const secret = req.headers.authorization.split(' ')[1];
+      req.account = { secret };
     }
+
+    if (req?.session?.token) {
+      req.user = jwt.verify(req.session.token, this.secret).payload;
+    }
+
+    if (req?.account?.secret) {
+      const query = isLive(req.account.secret) ? { liveKey: req.account.secret } : { testKey: req.account.secret };
+      const q = await User.find(query);
+      if (q?.length == 1) {
+        req.user = { ...req?.user, id: q[0]._id.toHexString() };
+      }
+    }
+
     next();
   });
 }
-
-exports.preAuth = (req, res, next) => {
-  new Auth(process.env.UNAUTH_SECRET).auth(req, res, () => {
-    if (!req?.user) return next(new AppError(401, 'Unauthorized'));
-    next();
-  });
-};
 
 exports.auth = (req, res, next) => {
   new Auth().auth(req, res, () => {
     if (req?.user) {
       next();
     } else {
-      res.status(403).json({ status: 'success', msg: 'You are not allowed to do that!' });
-      // return next(new AppError(403, 'You are not allowed to do that!'));
+      return next(new AppError(403, 'Access denied'));
     }
   });
 };
-
-exports.authAdmin = (req, res, next) => {
-  new Auth().auth(req, res, () => {
-    if (req?.user?.role === ACCOUNT_ROLE.ADMIN) {
-      next();
-    } else {
-      res.status(403).json({ status: 'success', msg: 'You are not allowed to do that!' });
-    }
-  });
-};
-
-exports.authStudent = (req, res, next) => {
-  new Auth().auth(req, res, () => {
-    if (req?.user?.role === ACCOUNT_ROLE.USER) {
-      next();
-    } else {
-      res.status(403).json({ status: 'success', msg: 'You are not allowed to do that!' });
-    }
-  });
-};
-
-// module.exports = { preAuth, authAdmin, authStudent };

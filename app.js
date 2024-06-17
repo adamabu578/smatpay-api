@@ -7,6 +7,7 @@ const MongoStore = require('connect-mongo');
 const cors = require('cors');
 
 const router = require('./routes');
+const globalErrorHandler = require("./helpers/errorhandler");
 
 (async () => {
   try {
@@ -56,6 +57,8 @@ app.use(cors(corsOptions));
 const prefix = process.env.NODE_ENV != 'development' ? 'vtu' : '';
 
 app.use(`/${prefix}`, router);
+
+app.use(globalErrorHandler);
 
 const port = 3003;
 app.listen(port, () => {
