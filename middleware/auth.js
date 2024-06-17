@@ -25,7 +25,8 @@ class Auth {
     }
 
     if (req?.account?.secret) {
-      const query = isLive(req.account.secret) ? { liveKey: req.account.secret } : { testKey: req.account.secret };
+      // const query = isLive(req.account.secret) ? { liveKey: req.account.secret } : { testKey: req.account.secret };
+      const query = { liveKey: req.account.secret };
       const q = await User.find(query);
       if (q?.length == 1) {
         req.user = { ...req?.user, id: q[0]._id.toHexString() };
