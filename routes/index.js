@@ -1,6 +1,7 @@
 const express = require('express');
 
 const base = require('../controllers');
+const bot = require('../controllers/bot');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -13,5 +14,7 @@ router.get('/profile', auth, base.profile);
 
 router.post('/topup', auth, base.topup);
 router.post('/callback', base.callback);
+
+router.post('/bot', bot.telegramBot);
 
 module.exports = router;

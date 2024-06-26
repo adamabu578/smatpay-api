@@ -2,47 +2,54 @@ const { default: mongoose } = require("mongoose");
 const { uid } = require("uid");
 
 const userSchema = new mongoose.Schema({
-    firstName: {
-        type: String,
+    uid: {
+        type: {
+            email: { type: String },
+            phone: { type: String },
+            telegramId: { type: String },
+        },
         required: true,
     },
-    lastName: {
-        type: String,
-        required: true,
+    name: {
+        type: {
+            first: { type: String, required: true, },
+            last: { type: String, required: true, },
+        },
     },
-    email: {
-        type: String,
-        required: true,
-        unique: true
+    balance: {
+        type: Number,
+        default: 0,
     },
-    phone: {
-        type: String,
-        required: true,
-        unique: true
-    },
-    emailStatus: {
-        type: String,
-        default: 'pending'
-    },
-    phoneStatus: {
-        type: String,
-        default: 'pending'
+    commission: {
+        type: Number,
+        default: 2.5,
     },
     testKey: {
         type: String,
         required: true,
         unique: true,
-        default: 'tk' + uid(20),
+        default: 'tk' + uid(20)
     },
     liveKey: {
         type: String,
         required: true,
         unique: true,
-        default: 'lk' + uid(20),
+        default: 'lk' + uid(20)
     },
+    // keys: {
+    //     type: {
+    //         test: {
+    //             type: String, required: true, unique: true,
+    //             // default: 'tk' + uid(20)
+    //         },
+    //         live: {
+    //             type: String, required: true, unique: true,
+    //             // default: 'lk' + uid(20) 
+    //         },
+    //     },
+    // },
     password: {
         type: String,
-        required: true,
     },
 }, {
     timestamps: {

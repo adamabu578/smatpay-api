@@ -12,7 +12,7 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck } = require("../helpers/utils");
+const { pExCheck, genRefNo } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
 
 exports.signUp = catchAsync(async (req, res, next) => {
@@ -20,10 +20,15 @@ exports.signUp = catchAsync(async (req, res, next) => {
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   const { firstName, lastName, email, phone } = req.body;
+
+  const q = await User.find({ $or: [{ 'uid.email': email }, { 'uid.phone': phone }] });
+  console.log('Q :::', q);
+  if (q.length != 0) return next(new AppError(400, 'Account with email/phone already exists'));
+
   const password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
 
-  const q = await User.create({ firstName, lastName, email, phone, password });
-  if (!q) return next(new AppError(500, 'Could not create account.'));
+  const q2 = await User.create({ uid: { email, phone }, name: { first: firstName, last: lastName }, password });
+  if (!q2) return next(new AppError(500, 'Could not create account.'));
 
   res.status(200).json({ status: "success", msg: "Account created." });
 });
@@ -32,7 +37,7 @@ exports.login = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.email, P.password]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const user = await User.findOne({ email: req.body.email });
+  const user = await User.findOne({ 'uid.email': req.body.email });
 
   if (!user) return next(new AppError(400, 'Invalid email and/or password'));
 
@@ -70,7 +75,48 @@ exports.profile = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] })
 });
 
-exports.topup = catchAsync(async (req, res, next) => {
+const singleTopup = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const q = await Service.findOne({ name: 'airtime' }, { _id: 1 });
+  if (!q) return next(new AppError(500, 'Service error'));
+
+  const q2 = await User.findOne({ _id: req.user.id }, { balance: 1, commission: 1 });
+
+  const amount = req.body[P.amount];
+  const totalAmount = amount - ((amount * q2.commission) / 100);
+  const balance = q2.balance;
+  const balanceAfter = balance - totalAmount;
+  if (balanceAfter < 0) return next(new AppError(409, 'Insufficient balance'));
+
+  const commission = amount - totalAmount;
+
+  const q3 = await Transaction.find({ userId: req.user.id, recipient: req.body[P.recipient], tags: req.body.tags });
+  if (q3.length != 0) return next(new AppError(400, 'Duplicate transaction')); //transaction with tags for recipient already exist
+
+  const q4 = await User.updateOne({ _id: req.user.id }, { balance: balanceAfter });
+  if (q4?.modifiedCount != 1) return next(new AppError(500, 'Account error'));
+
+  const transactionId = genRefNo();
+  await Transaction.create({ userId: req.user.id, transactionId, serviceId: q._id, recipient: req.body[P.recipient], unitPrice: amount, commission, amount, totalAmount, balanceBefore:balance, balanceAfter, tags: req.body?.tags });
+
+  const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    body: JSON.stringify({
+      request_id: transactionId,
+      serviceID: req.body[P.provider].toLowerCase(),
+      amount,
+      phone: req.body[P.recipient]
+    }),
+  });
+  const json = await resp.json();
+  res.status(201).json({ code: '000', msg: json.content?.transactions?.status == 'delivered' ? 'Transaction successful' : 'Transaction initiated' });
+  await Transaction.updateOne({ transactionId: json.requestId }, { status: json.content.transactions.status, statusDesc: json?.response_description })
+});
+
+const bulkTopup = catchAsync(async (req, res, next) => {
   const q = await Service.findOne({ name: 'airtime' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
@@ -100,11 +146,20 @@ exports.topup = catchAsync(async (req, res, next) => {
           }),
         });
         const json = await resp.json();
+        console.log('JSON', ':::', json);
         await Transaction.updateOne({ transactionId: json.requestId }, { status: json.content.transactions.status, statusDesc: json?.response_description })
       }
     } catch (error) {
       console.log('topup', ':::', 'error', ':::', error);
     }
+  }
+});
+
+exports.topup = catchAsync(async (req, res, next) => {
+  if (req.body?.list) {
+    bulkTopup(req, res, next);
+  } else {
+    singleTopup(req, res, next);
   }
 });
 

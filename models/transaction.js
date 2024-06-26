@@ -33,9 +33,21 @@ const transactionSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
+    amount: {
+        type: Number,
+        required:true
+    },
     totalAmount: {
         type: Number,
-        default: 1,
+        required:true
+    },
+    balanceBefore: {
+        type: Number,
+        required:true
+    },
+    balanceAfter: {
+        type: Number,
+        required:true
     },
     scheduleId: {
         type: mongoose.Types.ObjectId,
