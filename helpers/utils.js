@@ -1,4 +1,5 @@
 const randtoken = require('rand-token');
+const { COMMISSION_TYPE, DEFAULT_LOCALE } = require('./consts');
 
 exports.pExCheck = (reqParams, array) => {
     let resp = [];
@@ -11,7 +12,7 @@ exports.pExCheck = (reqParams, array) => {
     return resp;
 }
 
-exports.isLive = (secretKey)=>{
+exports.isLive = (secretKey) => {
     return secretKey?.startsWith('lk');
 }
 
@@ -25,4 +26,21 @@ exports.genRefNo = (str) => {
     const d = dt.split(',')[0].split('/');
     const t = dt.split(',')[1].trim().split(':');
     return `${d[2]}${d[1]}${d[0]}${t[0]}${t[1]}${rand}`;
+};
+
+exports.calcTotal = (unitPrice, qty, unitCommission, commissionType) => {
+    const formatter = new Intl.NumberFormat(DEFAULT_LOCALE, { useGrouping: false, roundingMode: 'floor', maximumFractionDigits: 2 });
+    let unitAmt, unitComm;
+    if (isNaN(unitPrice) || isNaN(qty) || isNaN(unitCommission)) throw new Error('NaN error');
+
+    if (commissionType == COMMISSION_TYPE.BASE) {
+        unitAmt = unitPrice - unitCommission;
+        unitComm = unitCommission;
+    } else if (commissionType == COMMISSION_TYPE.PERCENTAGE) {
+        unitComm = formatter.format((unitPrice * unitCommission) / 100);
+        unitAmt = unitPrice - unitComm;
+    } else {
+        throw new Error('Invalid commission');
+    }
+    return [parseFloat(unitAmt * qty), unitComm * qty]; //[total amount, total commission]
 };

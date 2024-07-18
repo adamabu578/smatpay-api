@@ -61,6 +61,12 @@ const transactionSchema = new mongoose.Schema({
     },
     tags: {
         type: [],
+    },
+    refundStatus: {
+        type: String,
+    },
+    respObj: {
+        type: Object,
     }
 }, {
     timestamps: {

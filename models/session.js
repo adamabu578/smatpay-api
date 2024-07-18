@@ -3,11 +3,15 @@ const { default: mongoose } = require("mongoose");
 const sessionSchema = new mongoose.Schema({
     user: {
         type: mongoose.Types.ObjectId,
-        required: true,
+    },
+    telegramId: {
+        type: String,
     },
     options: {
         type: {},
-        // required: true,
+    },
+    data: {
+        type: {},
     },
     isClosed: {
         type: Number,

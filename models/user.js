@@ -1,5 +1,6 @@
 const { default: mongoose } = require("mongoose");
 const { uid } = require("uid");
+const { COMMISSION } = require("../helpers/consts");
 
 const userSchema = new mongoose.Schema({
     uid: {
@@ -18,11 +19,11 @@ const userSchema = new mongoose.Schema({
     },
     balance: {
         type: Number,
-        default: 0,
+        default: 0.00,
     },
     commission: {
-        type: Number,
-        default: 2.5,
+        type: Object,
+        default: COMMISSION
     },
     testKey: {
         type: String,

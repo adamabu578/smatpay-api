@@ -4,6 +4,8 @@ const jwt = require("jsonwebtoken");
 const fetch = require('node-fetch');
 const randtoken = require('rand-token');
 const { uid } = require("uid");
+const BigNumber = require('bignumber.js');
+const puppeteer = require('puppeteer');
 
 const catchAsync = require("../helpers/catchAsync");
 const Service = require("../models/service");
@@ -12,22 +14,36 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, genRefNo } = require("../helpers/utils");
+const { pExCheck, genRefNo, calcTotal } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
+const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS } = require("../helpers/consts");
+const { sendTelegramDoc } = require("./bot");
 
 exports.signUp = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.body, [P.firstName, P.lastName, P.email, P.phone, P.password]);
+  // const missing = pExCheck(req.body, [P.firstName, P.lastName, P.email, P.phone, P.password]);
+  const missing = pExCheck(req.body, [P.firstName, P.lastName, P.email, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   const { firstName, lastName, email, phone } = req.body;
 
-  const q = await User.find({ $or: [{ 'uid.email': email }, { 'uid.phone': phone }] });
-  console.log('Q :::', q);
-  if (q.length != 0) return next(new AppError(400, 'Account with email/phone already exists'));
+  const filter = [{ 'uid.email': email }, { 'uid.phone': phone }];
 
-  const password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+  const uid = { email, phone };
+  if (req.body[P.telegramId]) {
+    uid[P.telegramId] = req.body[P.telegramId];
+    filter.push({ 'uid.telegramId': req.body[P.telegramId] });
+  }
 
-  const q2 = await User.create({ uid: { email, phone }, name: { first: firstName, last: lastName }, password });
+  const q = await User.find({ $or: filter });
+  if (q.length != 0 && q[0]?.email) return next(new AppError(400, 'Account with email already exists'));
+  else if (q.length != 0 && q[0]?.phone) return next(new AppError(400, 'Account with phone already exists'));
+  else if (q.length != 0 && q[0]?.telegramId) return next(new AppError(400, 'Account already linked to telegram'));
+
+  // const password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+
+  // const q2 = await User.create({ uid: { email, phone }, name: { first: firstName, last: lastName }, password });
+
+  const q2 = await User.create({ uid, name: { first: firstName, last: lastName } });
   if (!q2) return next(new AppError(500, 'Could not create account.'));
 
   res.status(200).json({ status: "success", msg: "Account created." });
@@ -75,6 +91,51 @@ exports.profile = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] })
 });
 
+const initTransaction = async (req, onError, onSuccess) => {
+  try {
+    const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.serviceId, P.commissionType, P.commissionKey]);
+    if (missing.length != 0) return onError(new AppError(400, 'Missing fields.', missing));
+
+    const q2 = await User.findOne({ _id: req.user.id }, { 'uid.telegramId': 1, balance: 1, commission: 1 });
+    const unitCommission = q2.commission[req.body[P.commissionKey]];
+
+    const qty = req.body?.[P.quantity] ?? 1;
+    const amount = req.body[P.amount];
+
+    const [totalAmount, commission] = calcTotal(amount, qty, unitCommission, req.body[P.commissionType]);
+    // console.log('totalAmount', totalAmount);
+
+    const balance = q2.balance;
+    // console.log('balance', balance);
+    const balanceAfter = BigNumber(balance).minus(totalAmount);
+    // console.log('balanceAfter', balanceAfter);
+    if (balanceAfter < 0) return onError(new AppError(402, 'Insufficient balance'));
+
+    if (req.body?.tags) {
+      const q3 = await Transaction.find({ userId: req.user.id, recipient: req.body[P.recipient], tags: req.body.tags });
+      if (q3.length != 0) return onError(new AppError(400, 'Duplicate transaction')); //transaction with tags for recipient already exist
+    }
+
+    const q4 = await User.updateOne({ _id: req.user.id }, { balance: balanceAfter });
+    if (q4?.modifiedCount != 1) return onError(new AppError(500, 'Account error'));
+
+    const transactionId = genRefNo();
+    await Transaction.create({ userId: req.user.id, transactionId, serviceId: req.body[P.serviceId], recipient: req.body[P.recipient], unitPrice: amount, quantity: qty, commission, amount, totalAmount, balanceBefore: balance, balanceAfter, tags: req.body?.tags });
+    onSuccess(transactionId, { id: q2._id, telegramId: q2.uid.telegramId });
+  } catch (error) {
+    console.log(error);
+    return onError(new AppError(500, 'Transaction initiation error'));
+  }
+};
+
+const updateTransaction = async (json) => {
+  try {
+    await Transaction.updateOne({ transactionId: json.transactionId }, { status: json?.status, statusDesc: json?.statusDesc, refundStatus: json?.refundStatus, respObj: json?.respObj });
+  } catch (error) {
+    console.log('updateTransaction', error);
+  }
+}
+
 const singleTopup = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
@@ -82,38 +143,26 @@ const singleTopup = catchAsync(async (req, res, next) => {
   const q = await Service.findOne({ name: 'airtime' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
-  const q2 = await User.findOne({ _id: req.user.id }, { balance: 1, commission: 1 });
+  req.body[P.serviceId] = q._id;
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.commissionKey] = `vtu-${req.body[P.provider]}`;
 
-  const amount = req.body[P.amount];
-  const totalAmount = amount - ((amount * q2.commission) / 100);
-  const balance = q2.balance;
-  const balanceAfter = balance - totalAmount;
-  if (balanceAfter < 0) return next(new AppError(409, 'Insufficient balance'));
-
-  const commission = amount - totalAmount;
-
-  const q3 = await Transaction.find({ userId: req.user.id, recipient: req.body[P.recipient], tags: req.body.tags });
-  if (q3.length != 0) return next(new AppError(400, 'Duplicate transaction')); //transaction with tags for recipient already exist
-
-  const q4 = await User.updateOne({ _id: req.user.id }, { balance: balanceAfter });
-  if (q4?.modifiedCount != 1) return next(new AppError(500, 'Account error'));
-
-  const transactionId = genRefNo();
-  await Transaction.create({ userId: req.user.id, transactionId, serviceId: q._id, recipient: req.body[P.recipient], unitPrice: amount, commission, amount, totalAmount, balanceBefore:balance, balanceAfter, tags: req.body?.tags });
-
-  const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-    body: JSON.stringify({
-      request_id: transactionId,
-      serviceID: req.body[P.provider].toLowerCase(),
-      amount,
-      phone: req.body[P.recipient]
-    }),
+  initTransaction(req, next, async (transactionId) => {
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify({
+        request_id: transactionId,
+        serviceID: req.body[P.provider],
+        amount: req.body[P.amount],
+        phone: req.body[P.recipient]
+      }),
+    });
+    const json = await resp.json();
+    res.status(201).json({ code: '000', msg: json.content?.transactions?.status == 'delivered' ? 'Recharge successful' : 'Recharge initiated' });
+    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
   });
-  const json = await resp.json();
-  res.status(201).json({ code: '000', msg: json.content?.transactions?.status == 'delivered' ? 'Transaction successful' : 'Transaction initiated' });
-  await Transaction.updateOne({ transactionId: json.requestId }, { status: json.content.transactions.status, statusDesc: json?.response_description })
 });
 
 const bulkTopup = catchAsync(async (req, res, next) => {
@@ -133,7 +182,7 @@ const bulkTopup = catchAsync(async (req, res, next) => {
         const t = dt.split(',')[1].trim().split(':');
         const ref = `${d[2]}${d[1]}${d[0]}${t[0]}${t[1]}${rand}`;
 
-        await Transaction.create({ userId: req.user.id, transactionId: ref, serviceId: q._id, recipient: arr[i].msisdn, unitPrice: arr[i].price, totalAmount: arr[i].price, tags: req.body?.tags });
+        await Transaction.create({ userId: req.user.id, transactionId: ref, serviceId: q._id, recipient: arr[i].msisdn, unitPrice: arr[i].price, amount: arr[i].price, totalAmount: arr[i].price, balanceBefore: 0, balanceAfter: 0, tags: req.body?.tags });
 
         const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
           method: 'POST',
@@ -146,8 +195,7 @@ const bulkTopup = catchAsync(async (req, res, next) => {
           }),
         });
         const json = await resp.json();
-        console.log('JSON', ':::', json);
-        await Transaction.updateOne({ transactionId: json.requestId }, { status: json.content.transactions.status, statusDesc: json?.response_description })
+        updateTransaction({ transactionId: ref, status: json.content.transactions.status, statusDesc: json?.response_description });
       }
     } catch (error) {
       console.log('topup', ':::', 'error', ':::', error);
@@ -155,7 +203,7 @@ const bulkTopup = catchAsync(async (req, res, next) => {
   }
 });
 
-exports.topup = catchAsync(async (req, res, next) => {
+exports.airtime = catchAsync(async (req, res, next) => {
   if (req.body?.list) {
     bulkTopup(req, res, next);
   } else {
@@ -163,9 +211,371 @@ exports.topup = catchAsync(async (req, res, next) => {
   }
 });
 
+exports.listDataBundles = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.query, [P.provider]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}-data`, {
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+  });
+  const json = await resp.json();
+  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list bundles.'));
+
+  res.status(200).json({ status: 'success', msg: 'Bundle listed', data: json?.content?.variations });
+});
+
+exports.subData = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.bundleCode]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const q = await Service.findOne({ name: 'data' }, { _id: 1 });
+  if (!q) return next(new AppError(500, 'Service error'));
+
+  req.body[P.serviceId] = q._id;
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
+
+  initTransaction(req, next, async (transactionId) => {
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify({
+        request_id: transactionId,
+        serviceID: `${req.body[P.provider]}-data`,
+        billersCode: req.body[P.recipient],
+        variation_code: req.body[P.bundleCode],
+        amount,
+        phone: req.body[P.recipient]
+      }),
+    });
+    const json = await resp.json();
+    res.status(201).json({ code: '000', msg: json.content?.transactions?.status == 'delivered' ? 'Subscription successful' : 'Subscription initiated' });
+    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
+  });
+});
+
+exports.listTVPlans = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.query, [P.provider]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}`, {
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+  });
+  const json = await resp.json();
+  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list plans.'));
+
+  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.variations });
+});
+
+exports.verifySmartCardNo = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.cardNumber]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const resp = await fetch(`${process.env.VTPASS_TEST_API}/merchant-verify`, {
+    // const resp = await fetch(`${process.env.VTPASS_API}/merchant-verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_TEST_API_KEY, 'secret-key': process.env.VTPASS_TEST_SECRET_KEY },
+    // headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    body: JSON.stringify({ serviceID: req.body[P.provider], billersCode: req.body[P.cardNumber] }),
+  });
+  const json = await resp.json();
+  if (json?.code != '000') return next(new AppError(500, 'Cannot verify smartcard number.'));
+  if (json?.content?.error) return next(new AppError(400, json?.content?.error));
+
+  res.status(200).json({ status: 'success', msg: 'Smartcard details', data: json?.content });
+});
+
+exports.tvSub = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.planId, P.amount, P.phone]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const q = await Service.findOne({ name: 'cable-tv' }, { _id: 1 });
+  if (!q) return next(new AppError(500, 'Service error'));
+
+  req.body[P.recipient] = req.body[P.cardNumber];
+  req.body[P.serviceId] = q._id;
+  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+  req.body[P.commissionKey] = `${req.body[P.provider]}`;
+
+  initTransaction(req, next, async (transactionId) => {
+    // const resp = await fetch(`${process.env.VTPASS_TEST_API}/pay`, {
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      // headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_TEST_API_KEY, 'secret-key': process.env.VTPASS_TEST_SECRET_KEY },
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify({
+        request_id: transactionId,
+        serviceID: req.body[P.provider],
+        billersCode: req.body[P.cardNumber],
+        variation_code: req.body[P.planId],
+        amount: req.body[P.amount],
+        phone: req.body[P.phone],
+        subscription_type: 'change',
+        quantity: 1 //The number of months viewing month e.g 1 (otional)
+      }),
+    });
+    const json = await resp.json();
+    if (json?.content?.error) return next(new AppError(400, json?.content?.error));
+
+    res.status(200).json({ status: 'success', msg: json.content?.transactions?.status == 'delivered' ? 'Subscription successful' : 'Subscription initiated' });
+    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
+  });
+});
+
+exports.tvRenew = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.amount, P.phone]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const q = await Service.findOne({ name: 'cable-tv' }, { _id: 1 });
+  if (!q) return next(new AppError(500, 'Service error'));
+
+  req.body[P.recipient] = req.body[P.cardNumber];
+  req.body[P.serviceId] = q._id;
+  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+  req.body[P.commissionKey] = `${req.body[P.provider]}`;
+
+  initTransaction(req, next, async (transactionId) => {
+    // const resp = await fetch(`${process.env.VTPASS_TEST_API}/pay`, {
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      // headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_TEST_API_KEY, 'secret-key': process.env.VTPASS_TEST_SECRET_KEY },
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify({
+        request_id: transactionId,
+        serviceID: req.body[P.provider],
+        billersCode: req.body[P.cardNumber],
+        amount: req.body[P.amount],
+        phone: req.body[P.phone],
+        subscription_type: 'renew'
+      }),
+    });
+    const json = await resp.json();
+    if (json?.content?.error) return next(new AppError(400, json?.content?.error));
+
+    res.status(200).json({ status: 'success', msg: json.content?.transactions?.status == 'delivered' ? 'Subscription successful' : 'Subscription initiated' });
+    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
+  });
+});
+
+const createPDF = async (uid, provider, denomination, nameOnCard, pinsArr) => {
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+  let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        p,
+        span {
+            margin: 0;
+            font-size: 12px;
+        }
+
+        #row {
+            display: flex;
+            flex-wrap: wrap;
+        }
+
+        .card {
+            /* width: 25%; */
+            width: 220px;
+            border-bottom: 0.5px dashed black;
+            border-right: 0.5px dashed black;
+            padding: 10px;
+        }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .info {
+            font-size: 10px;
+            font-weight: 200;
+        }
+
+        span.bold {
+            font-weight: 800;
+        }
+    </style>
+</head>
+<body>
+    <div id="row">`;
+  for (let i = 0; i < pinsArr.length; i++) {
+    html += `<div class="card">
+            <div class="top">
+                <span>${nameOnCard}</span>
+                <span>${provider} &#8358;${denomination}</span>
+            </div>
+            <p>PIN <span class="bold">${pinsArr[i].pin}</span></p>
+            <p style="font-size:12px;">S/N ${pinsArr[i].sn}</p>
+            <p class="info">Dial *311*PIN#</p>
+        </div>`;
+  }
+  html += `</div>
+</body>
+</html>`;
+  await page.setContent(html);
+  const path = `docs/${uid}.pdf`;
+  await page.pdf({ path, format: 'A4' });
+  await browser.close();
+  return path;
+}
+
+exports.generatePin = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.denomination, P.quantity, P.nameOnCard]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+  if (isNaN(req.body[P.denomination])) return next(new AppError(400, `${P.denomination} must be a number`));
+  if (isNaN(req.body[P.quantity])) return next(new AppError(400, `${P.quantity} must be a number`));
+
+  const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations variations
+
+  const q = await Service.findOne({ name: 'epin' }, { _id: 1 });
+  if (!q) return next(new AppError(500, 'Service error'));
+
+  req.body[P.serviceId] = q._id;
+  req.body[P.recipient] = 'N/A';
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+  req.body[P.amount] = req.body[P.denomination];
+  req.body[P.commissionType] = COMMISSION_TYPE.BASE;
+  req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
+
+  initTransaction(req, next, async (transactionId, option) => {
+    const resp = await fetch(`${process.env.EPIN_API}/epin/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apikey: process.env.EPIN_KEY,
+        service: "epin",
+        network: req.body[P.provider],
+        pinDenomination: DV[req.body[P.denomination]],
+        pinQuantity: req.body[P.quantity],
+        ref: transactionId
+      }),
+    });
+    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
+    const json = await resp.json();
+    const obj = { transactionId };
+    let respCode = 500, status = 'error', msg;
+    if (json.code == 101) {
+      obj.status = TRANSACTION_STATUS.DELIVERED;
+      obj.statusDesc = json.description.status;
+      const pinArr = json.description.PIN.split('\n');
+      obj.respObj = {
+        pins: pinArr.map(i => {
+          const item = i.split(',');
+          return { pin: item[0], sn: item[1] };
+        })
+      };
+      respCode = 200;
+      status = 'success';
+      msg = 'Downloading...';
+    } else if (json.code == 102) { //Low balance
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = 'Transaction failed';
+      obj.refundStatus = REFUND_STATUS.PENDING;
+      msg = 'Transaction failed'; //'Pending transaction';
+    } else {
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = json.description;
+      obj.refundStatus = REFUND_STATUS.PENDING;
+      msg = json.description;
+    }
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj);
+    if (obj.respObj) {
+      const path = await createPDF(option.id, req.body[P.provider].toUpperCase(), req.body[P.denomination], req.body[P.nameOnCard], obj.respObj.pins);
+      const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} (${req.body[P.quantity]}).pdf`;
+      sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
+    }
+  });
+});
+
+exports.listTransactions = catchAsync(async (req, res, next) => {
+  const { transactionId, recipient, status, tags } = req.query;
+  const filter = {};
+  if (transactionId) {
+    filter.transactionId = { $in: transactionId.split(',').filter(i => i != '') };
+  }
+  if (recipient) {
+    filter.recipient = { $in: recipient.split(',').filter(i => i != '') };
+  }
+  if (status) {
+    filter.status = { $in: status.split(',').filter(i => i != '') };
+  }
+  if (tags) {
+    filter.tags = { $in: tags.split(',').filter(i => i != '') };
+  }
+  const q = await Transaction.aggregate([
+    {
+      $match: filter
+    },
+    {
+      $limit: 50
+    },
+    {
+      $project: { service: '$serviceId', recipient: 1, unitPrice: 1, quantity: 1, discount: 1, totalAmount: 1, status: 1, tags: 1, createdAt: 1, statusDescription: '$statusDesc' }
+    },
+    {
+      $project: { _id: 0 }
+    }
+  ]);
+
+  const q2 = q.length > 0 ? await Service.find() : [];
+  const services = {};
+  for (let i = 0; i < q2.length; i++) {
+    services[q2[i]._id] = q2[i].title;
+  }
+
+  const list = q.map(i => {
+    const d = new Date(new Date(i.createdAt).toLocaleString(DEFAULT_LOCALE, { timeZone: TIMEZONE }));
+    return { ...i, service: services[i.service], createdAt: d.toLocaleString() };
+  });
+
+  res.status(200).json({ status: 'success', msg: 'Transactions listed', data: list });
+});
+
+exports.balance = catchAsync(async (req, res, next) => {
+  const q = await User.findOne({ _id: req.user.id }, { balance: 1 });
+  res.status(200).json({ status: 'success', msg: 'Balance fetched', data: q?.balance });
+});
+
+exports.topupInit = catchAsync(async (req, res, next) => {
+  const q = await User.findOne({ _id: req.user.id }, { 'uid.email': 1 });
+
+  const resp = await fetch(`${process.env.PAYSTACK_BASE_URL}/transaction/initialize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+    body: JSON.stringify({
+      email: q.uid.email,
+      amount: req.body.amount * 100,
+      metadata: { api: 'vtu', uid: q._id, service: 'topup' },
+    }),
+  });
+  const json = await resp.json();
+  console.log('JSON', ':::', json);
+
+  res.status(200).json({ status: 'success', msg: 'Balance fetched' });
+});
+
 exports.callback = catchAsync(async (req, res, next) => {
   res.status(200).json({ 'response': 'success' });
   const testKey = 'tk' + uid(20);
   const liveKey = 'lk' + uid(20);
   console.log('callback', ':::', req.body, ':::', testKey, ':::', liveKey);
+});
+
+exports.ePinsCallback = catchAsync(async (req, res, next) => {
+  res.sendStatus(200);
+  console.log('ePinsCallback', ':::', req.body);
 });
