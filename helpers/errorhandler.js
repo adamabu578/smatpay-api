@@ -6,6 +6,7 @@ const handleCastErrorDB = (err) => {
 };
 
 const handleDuplicateFieldsDB = (err) => {
+  // console.log('handleDuplicateFieldsDB', err);
   // const value = err.errmsg.match(/(["'])(\\?.)*?\1/)[0];
   const value = err.keyValue.name;
   // console.log(value);
@@ -38,13 +39,13 @@ const sendDevError = (err, res) => {
 };
 
 const sendProdError = (err, res) => {
-  // console.log(err);
+  console.log(err);
   // Operational, trusted error: send message to client
   if (err.isOperational) {
     const json = {
       status: 'error',
       msg: err.message,
-      stack: err.stack,
+      // stack: err.stack,
     };
     if (err?.data)
       json.data = err.data;

@@ -17,5 +17,6 @@ module.exports = {
     commissionType: 'commissionType',
     denomination: 'denomination',
     commissionKey: 'commissionKey',
-    nameOnCard:'nameOnCard',
+    nameOnCard: 'nameOnCard',
+    type: 'type',
 };

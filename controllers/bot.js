@@ -79,6 +79,24 @@ const menuActions = {
       return 'An error occured';
     }
   },
+  listSMEDataBundle: async (msg, q) => {
+    try {
+      const resp = await fetch(`${process.env.BASE_URL}/data/bundles?provider=${q?.options?.provider.toLowerCase()}&type=sme`, {
+        headers: { 'Authorization': `Bearer ${msg.from.key}` },
+      });
+      const json = await resp.json();
+      console.log('JS', json);
+      const bundles = json.data//.filter(i => i.name.toLowerCase().includes('sme'));
+      await Session.updateOne({ _id: q._id }, { data: { ...q.data, bundles } });
+      let str = 'Select bundle\n';
+      for (let i = 0; i < bundles.length; i++) {
+        str += `\n${i + 1}. ${bundles[i].name}`;
+      }
+      return str;
+    } catch (error) {
+      return 'An error occured';
+    }
+  },
   data: async (msg, q) => {
     try {
       const bundleOption = parseInt(q.options.bundle);
@@ -213,7 +231,15 @@ const menuActions = {
 };
 
 const networks = ['MTN', 'Airtel', 'Glo', '9mobile'];
+const networkValues = { 'MTN': 'MTN', 'Airtel': 'Airtel', 'Glo': 'Glo', '9mobile': 'etisalat' };
+const smeOps = ['Glo', '9mobile'];
 const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
+const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' } };
+const balOps = {
+  1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (auto)', k: '_topupBalAuto' }
+  // , 3: { n: 'Request Topup (manual)', k: '_topupBalManual' }, 4: { n: 'I have made a transfer', k: '_confirmTransfer' } 
+};
+const acctOps = { 1: { n: 'Balance threshold', k: '_balThreshold' } };
 const epinDenominations = {
   1: 100, 2: 200, 3: 500
   //, 4: 1000 
@@ -223,6 +249,74 @@ const networkMsg = () => {
   let str = 'Select network';
   for (let i = 0; i < networks.length; i++) {
     str += `\n${i + 1}. ${networks[i]}`;
+  }
+  return str;
+}
+
+const epinsOpsMsg = () => {
+  let str = 'Select option';
+  Object.entries(epinsOps).forEach(([k, v]) => {
+    str += `\n${k}. ${v.n}`;
+  });
+  return str;
+}
+
+const epinsOpsK = (opt) => {
+  if (isNaN(opt)) return;
+  let k;
+  for (let key in epinsOps) {
+    if (key == parseInt(opt)) {
+      k = epinsOps[key].k;
+      break
+    };
+  }
+  return k;
+}
+
+const balOpsMsg = () => {
+  let str = 'Select option';
+  Object.entries(balOps).forEach(([k, v]) => {
+    str += `\n${k}. ${v.n}`;
+  });
+  return str;
+}
+
+const balOpsK = (opt) => {
+  if (isNaN(opt)) return;
+  let k;
+  for (let key in balOps) {
+    if (key == parseInt(opt)) {
+      k = balOps[key].k;
+      break
+    };
+  }
+  return k;
+}
+
+const acctOpsMsg = () => {
+  let str = 'Select option';
+  Object.entries(acctOps).forEach(([k, v]) => {
+    str += `\n${k}. ${v.n}`;
+  });
+  return str;
+}
+
+const acctOpsK = (opt) => {
+  if (isNaN(opt)) return;
+  let k;
+  for (let key in acctOps) {
+    if (key == parseInt(opt)) {
+      k = acctOps[key].k;
+      break
+    };
+  }
+  return k;
+}
+
+const smeOpsMsg = () => {
+  let str = 'Select network';
+  for (let i = 0; i < smeOps.length; i++) {
+    str += `\n${i + 1}. ${smeOps[i]}`;
   }
   return str;
 }
@@ -245,23 +339,29 @@ const ePinDenominationMsg = () => {
 }
 
 const serviceSteps = {
-  'airtime': [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: 'Enter amount', key: 'amount', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }, { action: 'airtime', isEnd: true }],
-  'data': [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { action: 'listDataBundle', key: 'bundle', value: (opt) => opt }, { msg: 'Enter recipient', key: 'recipient', value: (input) => input }, { action: 'data', isEnd: true }],
-  'e-Pin': [{ msg: '1. Recharge Card\n2. WAEC Card', key: 'service', value: (index) => index == 1 ? '_rechargePin' : '_waecPin' }, { action: 'subMenu' }],
+  'airtime': [{ msg: networkMsg(), key: 'provider', value: (index) => networkValues[networks[parseInt(index) - 1]] }, { msg: 'Enter amount', key: 'amount', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }, { action: 'airtime', isEnd: true }],
+  'data': [{ msg: networkMsg(), key: 'provider', value: (index) => networkValues[networks[parseInt(index) - 1]] }, { action: 'listDataBundle', key: 'bundle', value: (opt) => opt }, { msg: 'Enter recipient', key: 'recipient', value: (input) => input }, { action: 'data', isEnd: true }],
+  'SME Data': [{ msg: smeOpsMsg(), key: 'provider', value: (index) => smeOps[parseInt(index) - 1] }, { action: 'listSMEDataBundle', key: 'bundle', value: (opt) => opt }, { msg: 'Enter recipient', key: 'recipient', value: (input) => input }, { action: 'data', isEnd: true }],
+  'e-Pin': [{ msg: epinsOpsMsg(), key: 'service', value: (opt) => epinsOpsK(opt) }, { action: 'subMenu' }],
   'electricity': [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: 'Select bundle', key: 'bundle', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }],
   'TV Subscription': [{ msg: tvOpsMsg(), key: 'provider', value: (index) => tvOps[parseInt(index) - 1] }, { msg: 'Enter Smartcard Number', key: 'cardNo', value: (input) => input }, { action: 'verifySmartcardNo', key: 'service', value: (opt) => opt == 1 ? '_tvSubRenew' : '_tvSubNewPlan' }, { action: 'subMenu' }],
-  'balance': [{ msg: '1. Check balance\n2. Topup balance', key: 'service', value: (index) => index == 1 ? '_checkBalance' : '_topupBalance' }, { action: 'subMenu' }],
-  'account': [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: 'Select bundle', key: 'bundle', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }],
+  'balance': [{ msg: balOpsMsg(), key: 'service', value: (opt) => balOpsK(opt) }, { action: 'subMenu' }],
+  'account': [{ msg: acctOpsMsg(), key: 'service', value: (opt) => acctOpsK(opt) }, { action: 'subMenu' }],
 
   _welcome: [{ msg: 'Welcome\n1. Link an existing account\n2. Create a new account', key: 'service', value: (index) => index == 1 ? '_linkAccount' : '_createAccount' }, { action: 'subMenu' }],
   _checkBalance: [{ action: 'checkBalance', isEnd: true }],
-  _topupBalance: [{ msg: 'Enter amount', key: 'amount', value: (input) => input }, { action: 'topupBalance', isEnd: true }],
+  // _topupBalAuto: [{ msg: 'Enter amount', key: 'amount', value: (input) => input }, { action: 'topupBalance', isEnd: true }],
+  _topupBalAuto: [{ msg: 'Sorry! this option is currently not available kindly use the manual option.', isEnd: true }],
+  _topupBalManual: [{ msg: 'Kindly make a transfer to this account and confirm the payment with the next option\n\nRoware Limited 2033040743 First Bank.', isEnd: true }],
+  _confirmTransfer: [{ msg: 'Request received, your account will be credited immediately the payment is received', isEnd: true }],
   _linkAccount: [{ action: 'linkAccount', isEnd: true }],
   _createAccount: [{ msg: 'Enter email', key: 'email', value: (input) => input }, { msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'createAccount', isEnd: true }],
   _tvSubRenew: [{ msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'tvRenew', isEnd: true }],
   _tvSubNewPlan: [{ action: 'listTVPlans', key: 'plan', value: (opt) => opt }, { msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'tvSub', isEnd: true }],
   _rechargePin: [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: ePinDenominationMsg(), key: 'denomination', value: (opt) => epinDenominations[opt] }, { msg: 'Enter quantity', key: 'quantity', value: (input) => input }, { msg: 'What name should be on the card?', key: 'nameOnCard', value: (input) => input }, { action: 'rechargePin', isEnd: true }],
-  _waecPin: [{ isEnd: true }],
+  _waecRegPin: [{ isEnd: true }],
+  _waecCheckPin: [{ isEnd: true }],
+  _balThreshold: [{ action: 'checkBalance', isEnd: true }],
 };
 
 

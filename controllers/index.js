@@ -16,34 +16,40 @@ const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, genRefNo, calcTotal } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS } = require("../helpers/consts");
+const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
 
 exports.signUp = catchAsync(async (req, res, next) => {
-  // const missing = pExCheck(req.body, [P.firstName, P.lastName, P.email, P.phone, P.password]);
-  const missing = pExCheck(req.body, [P.firstName, P.lastName, P.email, P.phone]);
+  const isTelegram = !!req.body?.[P.telegramId];
+  const params = [P.firstName, P.lastName, P.email, P.phone];
+  if (!isTelegram) { //registration not through telegram
+    params.push(P.password);
+  }
+  const missing = pExCheck(req.body, params);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   const { firstName, lastName, email, phone } = req.body;
 
   const filter = [{ 'uid.email': email }, { 'uid.phone': phone }];
 
-  const uid = { email, phone };
-  if (req.body[P.telegramId]) {
-    uid[P.telegramId] = req.body[P.telegramId];
+  const uidObj = { email, phone };
+  if (isTelegram) {
+    uidObj[P.telegramId] = req.body[P.telegramId];
     filter.push({ 'uid.telegramId': req.body[P.telegramId] });
   }
 
   const q = await User.find({ $or: filter });
-  if (q.length != 0 && q[0]?.email) return next(new AppError(400, 'Account with email already exists'));
-  else if (q.length != 0 && q[0]?.phone) return next(new AppError(400, 'Account with phone already exists'));
-  else if (q.length != 0 && q[0]?.telegramId) return next(new AppError(400, 'Account already linked to telegram'));
+  if (q.length != 0 && q[0]?.uid?.email == req.body[P.email]) return next(new AppError(400, 'Account with email already exists'));
+  else if (q.length != 0 && q[0]?.uid?.phone == req.body[P.phone]) return next(new AppError(400, 'Account with phone already exists'));
+  else if (q.length != 0 && isTelegram && q[0]?.uid?.telegramId == req.body[P.telegramId]) return next(new AppError(400, 'Account already linked to telegram'));
 
-  // const password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+  const fields = { uid: uidObj, name: { first: firstName, last: lastName }, testKey: 'tk' + uid(20), liveKey: 'lk' + uid(20) };
 
-  // const q2 = await User.create({ uid: { email, phone }, name: { first: firstName, last: lastName }, password });
+  if (!isTelegram) { //registration not through telegram
+    fields.password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+  }
 
-  const q2 = await User.create({ uid, name: { first: firstName, last: lastName } });
+  const q2 = await User.create(fields);
   if (!q2) return next(new AppError(500, 'Could not create account.'));
 
   res.status(200).json({ status: "success", msg: "Account created." });
@@ -130,10 +136,63 @@ const initTransaction = async (req, onError, onSuccess) => {
 
 const updateTransaction = async (json) => {
   try {
-    await Transaction.updateOne({ transactionId: json.transactionId }, { status: json?.status, statusDesc: json?.statusDesc, refundStatus: json?.refundStatus, respObj: json?.respObj });
+    await Transaction.updateOne({ transactionId: json.transactionId }, { status: json?.status, statusDesc: json?.statusDesc, refundStatus: json?.refundStatus, respObj: json?.respObj, rawResp: json?.rawResp });
   } catch (error) {
     console.log('updateTransaction', error);
   }
+}
+
+const afterTransaction = async (transactionId, json, res, vendor) => {
+  const obj = { transactionId };
+  let respCode = 500, status = 'error', msg;
+  if (vendor == VENDORS.VTPASS) {
+    if (json.code == '000') {
+      obj.status = json.content.transactions.status;
+      obj.statusDesc = json?.response_description;
+      respCode = obj.status == TRANSACTION_STATUS.DELIVERED ? 200 : 201;
+      status = 'success';
+      msg = obj.status == TRANSACTION_STATUS.DELIVERED ? 'Successful' : 'Request initiated';
+    } else if (json.code == '018') { //Low balance
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = 'Transaction failed';
+      obj.refundStatus = REFUND_STATUS.PENDING;
+      msg = 'Transaction failed'; //'Pending transaction';
+    } else {
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = json?.response_description;
+      obj.refundStatus = REFUND_STATUS.PENDING;
+      msg = json?.content?.error ?? 'An error occured';
+    }
+  } else if (vendor == VENDORS.EPINS) {
+    obj.rawResp = json;
+    if (json.code == 101) {
+      obj.status = TRANSACTION_STATUS.DELIVERED;
+      obj.statusDesc = json.description.status;
+      const pinArr = json.description.PIN.split('\n');
+      obj.respObj = {
+        pins: pinArr.map(i => {
+          const item = i.split(',');
+          return { pin: item[0], sn: item[1] };
+        })
+      };
+      respCode = 200;
+      status = 'success';
+      msg = 'Downloading...';
+    } else if (json.code == 102) { //Low balance
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = 'Transaction failed';
+      obj.refundStatus = REFUND_STATUS.PENDING;
+      msg = 'Transaction failed'; //'Pending transaction';
+    } else {
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = json.description;
+      obj.refundStatus = REFUND_STATUS.PENDING;
+      msg = json.description;
+    }
+  }
+  res.status(respCode).json({ status, msg });
+  updateTransaction(obj);
+  return obj;
 }
 
 const singleTopup = catchAsync(async (req, res, next) => {
@@ -159,9 +218,9 @@ const singleTopup = catchAsync(async (req, res, next) => {
         phone: req.body[P.recipient]
       }),
     });
+    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
-    res.status(201).json({ code: '000', msg: json.content?.transactions?.status == 'delivered' ? 'Recharge successful' : 'Recharge initiated' });
-    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
+    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
   });
 });
 
@@ -215,7 +274,9 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.query, [P.provider]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}-data`, {
+  const type = req.query?.type == 'sme' ? '-sme-' : '-';
+
+  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}${type}data`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
   });
   const json = await resp.json();
@@ -245,13 +306,12 @@ exports.subData = catchAsync(async (req, res, next) => {
         serviceID: `${req.body[P.provider]}-data`,
         billersCode: req.body[P.recipient],
         variation_code: req.body[P.bundleCode],
-        amount,
+        amount: req.body[P.amount],
         phone: req.body[P.recipient]
       }),
     });
     const json = await resp.json();
-    res.status(201).json({ code: '000', msg: json.content?.transactions?.status == 'delivered' ? 'Subscription successful' : 'Subscription initiated' });
-    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
+    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
   });
 });
 
@@ -272,11 +332,11 @@ exports.verifySmartCardNo = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.cardNumber]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const resp = await fetch(`${process.env.VTPASS_TEST_API}/merchant-verify`, {
-    // const resp = await fetch(`${process.env.VTPASS_API}/merchant-verify`, {
+  // const resp = await fetch(`${process.env.VTPASS_TEST_API}/merchant-verify`, {
+  const resp = await fetch(`${process.env.VTPASS_API}/merchant-verify`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_TEST_API_KEY, 'secret-key': process.env.VTPASS_TEST_SECRET_KEY },
-    // headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    // headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_TEST_API_KEY, 'secret-key': process.env.VTPASS_TEST_SECRET_KEY },
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
     body: JSON.stringify({ serviceID: req.body[P.provider], billersCode: req.body[P.cardNumber] }),
   });
   const json = await resp.json();
@@ -317,10 +377,7 @@ exports.tvSub = catchAsync(async (req, res, next) => {
       }),
     });
     const json = await resp.json();
-    if (json?.content?.error) return next(new AppError(400, json?.content?.error));
-
-    res.status(200).json({ status: 'success', msg: json.content?.transactions?.status == 'delivered' ? 'Subscription successful' : 'Subscription initiated' });
-    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
+    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
   });
 });
 
@@ -353,10 +410,7 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
       }),
     });
     const json = await resp.json();
-    if (json?.content?.error) return next(new AppError(400, json?.content?.error));
-
-    res.status(200).json({ status: 'success', msg: json.content?.transactions?.status == 'delivered' ? 'Subscription successful' : 'Subscription initiated' });
-    updateTransaction({ transactionId, status: json.content.transactions.status, statusDesc: json?.response_description });
+    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
   });
 });
 
@@ -465,39 +519,61 @@ exports.generatePin = catchAsync(async (req, res, next) => {
     });
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
-    const obj = { transactionId };
-    let respCode = 500, status = 'error', msg;
-    if (json.code == 101) {
-      obj.status = TRANSACTION_STATUS.DELIVERED;
-      obj.statusDesc = json.description.status;
-      const pinArr = json.description.PIN.split('\n');
-      obj.respObj = {
-        pins: pinArr.map(i => {
-          const item = i.split(',');
-          return { pin: item[0], sn: item[1] };
-        })
-      };
-      respCode = 200;
-      status = 'success';
-      msg = 'Downloading...';
-    } else if (json.code == 102) { //Low balance
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = 'Transaction failed';
-      obj.refundStatus = REFUND_STATUS.PENDING;
-      msg = 'Transaction failed'; //'Pending transaction';
-    } else {
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = json.description;
-      obj.refundStatus = REFUND_STATUS.PENDING;
-      msg = json.description;
-    }
-    res.status(respCode).json({ status, msg });
-    updateTransaction(obj);
+    const obj = await afterTransaction(transactionId, json, res, VENDORS.EPINS);
     if (obj.respObj) {
       const path = await createPDF(option.id, req.body[P.provider].toUpperCase(), req.body[P.denomination], req.body[P.nameOnCard], obj.respObj.pins);
       const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} (${req.body[P.quantity]}).pdf`;
       sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
     }
+  });
+});
+
+exports.getExamPIN = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.query, [P.type]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const types = EXAM_PIN_TYPES;
+  if (!types[req.query[P.type]]) return next(new AppError(400, 'Invalid exam type'));
+
+  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${types[req.query[P.type]]}`, {
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+  });
+  const json = await resp.json();
+  console.log('JSON :::', json);
+  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list plans.'));
+
+  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.variations });
+});
+
+exports.buyExamPIN = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.bundleCode]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const q = await Service.findOne({ name: 'data' }, { _id: 1 });
+  if (!q) return next(new AppError(500, 'Service error'));
+
+  const types = EXAM_PIN_TYPES;
+
+  req.body[P.serviceId] = q._id;
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
+
+  initTransaction(req, next, async (transactionId) => {
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify({
+        request_id: transactionId,
+        serviceID: `${req.body[P.provider]}-data`,
+        variation_code: req.body[P.bundleCode],
+        amount: req.body[P.amount],
+        quantity: req.body[P.quantity],
+        phone: req.body[P.recipient]
+      }),
+    });
+    const json = await resp.json();
+    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
   });
 });
 

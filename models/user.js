@@ -1,5 +1,4 @@
 const { default: mongoose } = require("mongoose");
-const { uid } = require("uid");
 const { COMMISSION } = require("../helpers/consts");
 
 const userSchema = new mongoose.Schema({
@@ -29,13 +28,13 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
-        default: 'tk' + uid(20)
+        // default: 'tk' + uid(20)
     },
     liveKey: {
         type: String,
         required: true,
         unique: true,
-        default: 'lk' + uid(20)
+        // default: 'lk' + uid(20)
     },
     // keys: {
     //     type: {

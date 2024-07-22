@@ -67,6 +67,9 @@ const transactionSchema = new mongoose.Schema({
     },
     respObj: {
         type: Object,
+    },
+    rawResp: {
+        type: Object,
     }
 }, {
     timestamps: {

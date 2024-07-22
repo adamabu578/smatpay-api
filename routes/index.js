@@ -22,8 +22,11 @@ router.get('/tv/plans', auth, base.listTVPlans);
 router.post('/tv/card/verify', auth, base.verifySmartCardNo);
 router.post('/tv/subscribe', auth, base.tvSub);
 router.post('/tv/renew', auth, base.tvRenew);
+router.get('/exam/pin', auth, base.getExamPIN);
+router.post('/exam/pin', auth, base.buyExamPIN);
 
 router.get('/transactions', auth, base.listTransactions);
+// router.get('/transactions/merge', auth, base.mergeTransaction);
 
 router.post('/callback', base.callback); //vtpass
 router.post('/webhook/epins', base.ePinsCallback);

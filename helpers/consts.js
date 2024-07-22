@@ -17,6 +17,16 @@ exports.REFUND_STATUS = {
     REFUNDED: 'refunded',
 };
 
+exports.VENDORS = {
+    VTPASS: 'vtpass',
+    EPINS: 'epins',
+};
+
+exports.EXAM_PIN_TYPES = {
+    'waec-registration': 'waec-registration',
+    'waec-checker': 'waec',
+};
+
 // exports.COMMISSION = {
 //     "vtu-mtn": 2.5,
 //     "vtu-airtel": 2.9,
@@ -26,6 +36,7 @@ exports.REFUND_STATUS = {
 //     "data-airtel": 2.9,
 //     "data-glo": 3.5,
 //     "data-9mobile": 3.5,
+//     "sme-data-glo": 3.0,
 //     "pin-mtn-100": 1.2,
 //     "pin-mtn-200": 2.4,
 //     "pin-mtn-500": 10,
@@ -49,6 +60,7 @@ exports.COMMISSION = {
     'data-airtel': 2.9,
     'data-glo': 3.5,
     'data-9mobile': 3.5,
+    'sme-data-glo': 0.0,
     'pin-mtn-100': 0.0,
     'pin-mtn-200': 0.0,
     'pin-mtn-500': 0.0,
