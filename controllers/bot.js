@@ -13,19 +13,6 @@ bot.setWebHook(`${process.env.BASE_URL}/bot`);
 exports.telegramBot = catchAsync(async (req, res, next) => {
   res.sendStatus(200);
   bot.processUpdate(req.body);
-
-  // const q = await User.find({ 'uid.telegramId': req.body.message.from.id });
-  // let q2;
-  // if (q.length == 0) {
-  //   q2 = await User.create({ uid: { telegramId: req.body.message.from.id }, name: { first: req.body.message.from?.first_name, last: req.body.message.from?.last_name } });
-  // } else {
-  //   q2 = q[0];
-  // }
-  // if (q2) {
-  //   req.body.message.from._id = q2._id;
-  //   req.body.message.from.key = q2.liveKey;
-  //   bot.processUpdate(req.body);
-  // }
 });
 
 const sendTelegramDoc = async (chatId, filePath, option) => {
@@ -440,48 +427,38 @@ const botProcess = async (msg, q, serviceKey) => {
 }
 
 bot.on('message', async msg => {
-  const q = await User.find({ 'uid.telegramId': msg.from.id });
-
-  // let q2;
-  // if (q.length == 0) {
-  //   q2 = await User.create({ uid: { telegramId: req.body.message.from.id }, name: { first: req.body.message.from?.first_name, last: req.body.message.from?.last_name } });
-  // } else {
-  //   q2 = q[0];
-  // }
-  // if (q2) {
-  //   req.body.message.from._id = q2._id;
-  //   req.body.message.from.key = q2.liveKey;
-  //   bot.processUpdate(req.body);
-  // }
-
-  const query = { isClosed: 0 };
-
-  if (q.length == 1) { //User already exist
-    msg.from._id = q[0]._id;
-    msg.from.key = q[0].liveKey;
-    query.user = q[0]._id;
+  if (process.env.NODE_ENV == 'development' && msg.from.id != process.env.TELEGRAM_BOT_DEV_USER) {
+    bot.sendMessage(msg.chat.id, `Sorry we have moved to ${process.env.TELEGRAM_BOT_LIVE_LINK}`);
   } else {
-    query.telegramId = msg.from.id;
-  }
+    const q = await User.find({ 'uid.telegramId': msg.from.id });
 
-  const q2 = await Session.findOne(query);
+    const query = { isClosed: 0 };
 
-  if (q.length == 0 && !q2) {
-    // msg.from._id = msg.from.id;
-    // console.log(q, ':::', q2);
-    botProcess(msg, q2, '_welcome');
-  } else if (msg.text == '.') {
-    if (q2) closeSession(q2._id);
-    bot.sendMessage(msg.chat.id, page1());
-  } else if (!q2) {
-    const input = isNaN(msg.text) ? msg.text : parseInt(msg.text) - 1; //case of selecting a menu with a number (menu index). applicable to page 1 only OR entering a service key directly. e.g airtime
-    const serviceKey = Object.keys(serviceSteps)?.[input];
-    if (serviceKey) {
-      botProcess(msg, q2, serviceKey);
-    } else { //other cases, e.g entering a text that does not match any service key
-      bot.sendMessage(msg.chat.id, page1());
+    if (q.length == 1) { //User already exist
+      msg.from._id = q[0]._id;
+      msg.from.key = q[0].liveKey;
+      query.user = q[0]._id;
+    } else {
+      query.telegramId = msg.from.id;
     }
-  } else if (q2) {
-    botProcess(msg, q2, q2.options.service);
+
+    const q2 = await Session.findOne(query);
+
+    if (q.length == 0 && !q2) {
+      botProcess(msg, q2, '_welcome');
+    } else if (msg.text == '.') {
+      if (q2) closeSession(q2._id);
+      bot.sendMessage(msg.chat.id, page1());
+    } else if (!q2) {
+      const input = isNaN(msg.text) ? msg.text : parseInt(msg.text) - 1; //case of selecting a menu with a number (menu index). applicable to page 1 only OR entering a service key directly. e.g airtime
+      const serviceKey = Object.keys(serviceSteps)?.[input];
+      if (serviceKey) {
+        botProcess(msg, q2, serviceKey);
+      } else { //other cases, e.g entering a text that does not match any service key
+        bot.sendMessage(msg.chat.id, page1());
+      }
+    } else if (q2) {
+      botProcess(msg, q2, q2.options.service);
+    }
   }
 });

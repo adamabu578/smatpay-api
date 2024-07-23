@@ -54,13 +54,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(session(sessOption));
 app.use(cors(corsOptions));
 
-const prefix = process.env.NODE_ENV != 'development' ? 'vtu' : '';
+const prefix = process.env.NODE_ENV != 'development' ? 'vtu' : 'vtu/dev';
 
 app.use(`/${prefix}`, router);
 
 app.use(globalErrorHandler);
 
-const port = 3003;
+const port = process.env.NODE_ENV != 'development' ? 3003 : 3004;
 app.listen(port, () => {
   console.log(`Running on port: ${port}`);
 })
+
+// lsof -i :3000
+// kill -9 PROCESS-ID
