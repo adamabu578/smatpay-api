@@ -27,6 +27,20 @@ exports.EXAM_PIN_TYPES = {
     'waec-checker': 'waec',
 };
 
+exports.MENU_STEPS = {
+    _welcome: '_welcome',
+};
+
+exports.MENU_OPTION = {
+    invalid: 'invalid',
+};
+
+exports.BOT_COMMANDS = {
+    start: '.',
+};
+
+exports.networks = { 'MTN': 'MTN', 'Airtel': 'Airtel', 'Glo': 'Glo', '9mobile': 'etisalat' };
+
 // exports.COMMISSION = {
 //     "vtu-mtn": 2.5,
 //     "vtu-airtel": 2.9,

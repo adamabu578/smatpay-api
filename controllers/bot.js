@@ -6,6 +6,7 @@ const catchAsync = require("../helpers/catchAsync");
 const User = require("../models/user");
 const Session = require("../models/session");
 const { capFirstChar } = require('../helpers/utils');
+const { MENU_STEPS, MENU_OPTION } = require('../helpers/consts');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 bot.setWebHook(`${process.env.BASE_URL}/bot`);
@@ -217,8 +218,8 @@ const menuActions = {
   },
 };
 
+const onboardOps = { 1: { n: 'Link an existing account', k: '_linkAccount' }, 2: { n: 'Create a new account', k: '_createAccount' } };
 const networks = ['MTN', 'Airtel', 'Glo', '9mobile'];
-const networkValues = { 'MTN': 'MTN', 'Airtel': 'Airtel', 'Glo': 'Glo', '9mobile': 'etisalat' };
 const smeOps = ['Glo', '9mobile'];
 const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
 const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' } };
@@ -232,12 +233,49 @@ const epinDenominations = {
   //, 4: 1000 
 };
 
+const onboardMsg = () => {
+  let str = 'Welcome, select option';
+  Object.entries(onboardOps).forEach(([k, v]) => {
+    str += `\n${k}. ${v.n}`;
+  });
+  return str;
+}
+const onboardOpsK = (opt) => {
+  if (isNaN(opt)) return MENU_STEPS._welcome;
+  let k;
+  for (let key in onboardOps) {
+    if (key == parseInt(opt)) {
+      k = onboardOps[key].k;
+      break
+    };
+  }
+  return k ? k : MENU_STEPS._welcome;
+}
+
 const networkMsg = () => {
   let str = 'Select network';
   for (let i = 0; i < networks.length; i++) {
     str += `\n${i + 1}. ${networks[i]}`;
   }
   return str;
+}
+const networkOpsK = (opt) => {
+  if (isNaN(opt)) return MENU_OPTION.invalid;
+  if (opt > networks.length) return MENU_OPTION.invalid;
+  return networks[opt - 1];
+}
+
+const smeOpsMsg = () => {
+  let str = 'Select network';
+  for (let i = 0; i < smeOps.length; i++) {
+    str += `\n${i + 1}. ${smeOps[i]}`;
+  }
+  return str;
+}
+const smeOpsK = (opt) => {
+  if (isNaN(opt)) return MENU_OPTION.invalid;
+  if (opt > smeOps.length) return MENU_OPTION.invalid;
+  return smeOps[opt - 1];
 }
 
 const epinsOpsMsg = () => {
@@ -247,9 +285,8 @@ const epinsOpsMsg = () => {
   });
   return str;
 }
-
 const epinsOpsK = (opt) => {
-  if (isNaN(opt)) return;
+  if (isNaN(opt)) MENU_OPTION.invalid;;
   let k;
   for (let key in epinsOps) {
     if (key == parseInt(opt)) {
@@ -260,6 +297,28 @@ const epinsOpsK = (opt) => {
   return k;
 }
 
+const tvOpsMsg = () => {
+  let str = '';
+  for (let i = 0; i < tvOps.length; i++) {
+    str += `\n${i + 1}. ${tvOps[i]}`;
+  }
+  return str;
+}
+const tvOpsK = (opt) => {
+  if (isNaN(opt)) return MENU_OPTION.invalid;
+  if (opt > tvOps.length) return MENU_OPTION.invalid;
+  return tvOps[opt - 1];
+}
+
+const ePinDenominationMsg = () => {
+  let str = 'Select denomination';
+  const arr = Object.values(epinDenominations);
+  for (let i = 0; i < arr.length; i++) {
+    str += `\n${i + 1}. ${arr[i]}`;
+  }
+  return str;
+}
+
 const balOpsMsg = () => {
   let str = 'Select option';
   Object.entries(balOps).forEach(([k, v]) => {
@@ -267,12 +326,10 @@ const balOpsMsg = () => {
   });
   return str;
 }
-
 const balOpsK = (opt) => {
-  if (isNaN(opt)) return;
-  let k;
+  let k = MENU_OPTION.invalid;
   for (let key in balOps) {
-    if (key == parseInt(opt)) {
+    if (key == opt) {
       k = balOps[key].k;
       break
     };
@@ -287,12 +344,10 @@ const acctOpsMsg = () => {
   });
   return str;
 }
-
 const acctOpsK = (opt) => {
-  if (isNaN(opt)) return;
-  let k;
+  let k = MENU_OPTION.invalid;
   for (let key in acctOps) {
-    if (key == parseInt(opt)) {
+    if (key == opt) {
       k = acctOps[key].k;
       break
     };
@@ -300,68 +355,143 @@ const acctOpsK = (opt) => {
   return k;
 }
 
-const smeOpsMsg = () => {
-  let str = 'Select network';
-  for (let i = 0; i < smeOps.length; i++) {
-    str += `\n${i + 1}. ${smeOps[i]}`;
+const menus = [
+  {
+    command: 'start',
+    description: 'Start a new session',
+  },
+  {
+    key: 'airtime',
+    command: 'airtime',
+    description: 'Airtime topup',
+    steps: [{ msg: networkMsg(), key: 'provider', value: (opt) => networkOpsK(opt) }, { msg: 'Enter amount', key: 'amount', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }, { action: 'airtime', isEnd: true }],
+  },
+  {
+    key: 'data',
+    command: 'data',
+    description: 'Buy internet data',
+    steps: [{ msg: networkMsg(), key: 'provider', value: (opt) => networkOpsK(opt) }, { action: 'listDataBundle', key: 'bundle', value: (opt) => opt }, { msg: 'Enter recipient', key: 'recipient', value: (input) => input }, { action: 'data', isEnd: true }],
+  },
+  {
+    key: 'SME Data',
+    command: 'smedata',
+    description: 'Buy SME data',
+    steps: [{ msg: smeOpsMsg(), key: 'provider', value: (opt) => smeOpsK(opt) }, { action: 'listSMEDataBundle', key: 'bundle', value: (opt) => opt }, { msg: 'Enter recipient', key: 'recipient', value: (input) => input }, { action: 'data', isEnd: true }],
+  },
+  {
+    key: 'e-Pin',
+    command: 'epin',
+    description: 'Generate recharge card pins',
+    steps: [{ msg: epinsOpsMsg(), key: 'service', value: (opt) => epinsOpsK(opt) }, { action: 'subMenu' }],
+  },
+  {
+    key: 'electricity',
+    command: 'electricity',
+    description: 'Prepaid or post paid electricity',
+    steps: [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: 'Select bundle', key: 'bundle', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }],
+  },
+  {
+    key: 'TV Subscription',
+    command: 'tvsubscription',
+    description: 'DSTV, GoTV, Startime, ShowMax',
+    steps: [{ msg: tvOpsMsg(), key: 'provider', value: (opt) => tvOpsK(opt) }, { msg: 'Enter Smartcard Number', key: 'cardNo', value: (input) => input }, { action: 'verifySmartcardNo', key: 'service', value: (opt) => opt == 1 ? '_tvSubRenew' : '_tvSubNewPlan' }, { action: 'subMenu' }],
+  },
+  {
+    key: 'balance',
+    command: 'balance',
+    description: 'Account balance options',
+    steps: [{ msg: balOpsMsg(), key: 'service', value: (opt) => balOpsK(opt) }, { action: 'subMenu' }],
+  },
+  {
+    key: 'account',
+    command: 'account',
+    description: 'Account setting options',
+    steps: [{ msg: acctOpsMsg(), key: 'service', value: (opt) => acctOpsK(opt) }, { action: 'subMenu' }],
+  },
+  {
+    key: '_welcome',
+    steps: [{ msg: onboardMsg(), key: 'service', value: (opt) => onboardOpsK(opt) }, { action: 'subMenu' }],
+  },
+  {
+    key: '_checkBalance',
+    steps: [{ action: 'checkBalance', isEnd: true }],
+  },
+  // {
+  //   key: '_topupBalAuto',
+  //   steps: [{ msg: 'Enter amount', key: 'amount', value: (input) => input }, { action: 'topupBalance', isEnd: true }],
+  // },
+  {
+    key: '_topupBalAuto',
+    steps: [{ msg: 'Sorry! this option is currently not available kindly use the manual option.', isEnd: true }],
+  },
+  {
+    key: '_topupBalManual',
+    steps: [{ msg: 'Kindly make a transfer to this account and confirm the payment with the next option\n\nRoware Limited 2033040743 First Bank.', isEnd: true }],
+  },
+  {
+    key: '_confirmTransfer',
+    steps: [{ msg: 'Request received, your account will be credited immediately the payment is received', isEnd: true }],
+  },
+  {
+    key: '_linkAccount',
+    steps: [{ action: 'linkAccount', isEnd: true }],
+  },
+  {
+    key: '_createAccount',
+    steps: [{ msg: 'Enter email', key: 'email', value: (input) => input }, { msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'createAccount', isEnd: true }],
+  },
+  {
+    key: '_tvSubRenew',
+    steps: [{ msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'tvRenew', isEnd: true }],
+  },
+  {
+    key: '_tvSubNewPlan',
+    steps: [{ action: 'listTVPlans', key: 'plan', value: (opt) => opt }, { msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'tvSub', isEnd: true }],
+  },
+  {
+    key: '_rechargePin',
+    steps: [{ msg: networkMsg(), key: 'provider', value: (opt) => networkOpsK(opt) }, { msg: ePinDenominationMsg(), key: 'denomination', value: (opt) => epinDenominations[opt] }, { msg: 'Enter quantity', key: 'quantity', value: (input) => input }, { msg: 'What name should be on the card?', key: 'nameOnCard', value: (input) => input }, { action: 'rechargePin', isEnd: true }],
+  },
+  {
+    key: '_waecRegPin',
+    steps: [{ isEnd: true }],
+  },
+  {
+    key: '_waecCheckPin',
+    steps: [{ isEnd: true }],
+  },
+  {
+    key: '_balThreshold',
+    steps: [{ action: 'checkBalance', isEnd: true }],
   }
-  return str;
-}
+];
 
-const tvOpsMsg = () => {
-  let str = '';
-  for (let i = 0; i < tvOps.length; i++) {
-    str += `\n${i + 1}. ${tvOps[i]}`;
+const commands = menus.filter(i => i?.command && i?.description);
+bot.setMyCommands(commands);
+
+const mainSteps = {};
+menus.forEach(el => {
+  if (el?.key && el?.steps && !el?.key.startsWith('_')) {
+    mainSteps[el.key] = el.steps;
   }
-  return str;
-}
+});
 
-const ePinDenominationMsg = () => {
-  let str = 'Select denomination';
-  const arr = Object.values(epinDenominations);
-  for (let i = 0; i < arr.length; i++) {
-    str += `\n${i + 1}. ${arr[i]}`;
+const subSteps = {};
+menus.forEach(el => {
+  if (el?.key && el?.steps && el?.key.startsWith('_')) {
+    subSteps[el.key] = el.steps;
   }
-  return str;
-}
+});
 
-const serviceSteps = {
-  'airtime': [{ msg: networkMsg(), key: 'provider', value: (index) => networkValues[networks[parseInt(index) - 1]] }, { msg: 'Enter amount', key: 'amount', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }, { action: 'airtime', isEnd: true }],
-  'data': [{ msg: networkMsg(), key: 'provider', value: (index) => networkValues[networks[parseInt(index) - 1]] }, { action: 'listDataBundle', key: 'bundle', value: (opt) => opt }, { msg: 'Enter recipient', key: 'recipient', value: (input) => input }, { action: 'data', isEnd: true }],
-  'SME Data': [{ msg: smeOpsMsg(), key: 'provider', value: (index) => smeOps[parseInt(index) - 1] }, { action: 'listSMEDataBundle', key: 'bundle', value: (opt) => opt }, { msg: 'Enter recipient', key: 'recipient', value: (input) => input }, { action: 'data', isEnd: true }],
-  'e-Pin': [{ msg: epinsOpsMsg(), key: 'service', value: (opt) => epinsOpsK(opt) }, { action: 'subMenu' }],
-  'electricity': [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: 'Select bundle', key: 'bundle', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }],
-  'TV Subscription': [{ msg: tvOpsMsg(), key: 'provider', value: (index) => tvOps[parseInt(index) - 1] }, { msg: 'Enter Smartcard Number', key: 'cardNo', value: (input) => input }, { action: 'verifySmartcardNo', key: 'service', value: (opt) => opt == 1 ? '_tvSubRenew' : '_tvSubNewPlan' }, { action: 'subMenu' }],
-  'balance': [{ msg: balOpsMsg(), key: 'service', value: (opt) => balOpsK(opt) }, { action: 'subMenu' }],
-  'account': [{ msg: acctOpsMsg(), key: 'service', value: (opt) => acctOpsK(opt) }, { action: 'subMenu' }],
-
-  _welcome: [{ msg: 'Welcome\n1. Link an existing account\n2. Create a new account', key: 'service', value: (index) => index == 1 ? '_linkAccount' : '_createAccount' }, { action: 'subMenu' }],
-  _checkBalance: [{ action: 'checkBalance', isEnd: true }],
-  // _topupBalAuto: [{ msg: 'Enter amount', key: 'amount', value: (input) => input }, { action: 'topupBalance', isEnd: true }],
-  _topupBalAuto: [{ msg: 'Sorry! this option is currently not available kindly use the manual option.', isEnd: true }],
-  _topupBalManual: [{ msg: 'Kindly make a transfer to this account and confirm the payment with the next option\n\nRoware Limited 2033040743 First Bank.', isEnd: true }],
-  _confirmTransfer: [{ msg: 'Request received, your account will be credited immediately the payment is received', isEnd: true }],
-  _linkAccount: [{ action: 'linkAccount', isEnd: true }],
-  _createAccount: [{ msg: 'Enter email', key: 'email', value: (input) => input }, { msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'createAccount', isEnd: true }],
-  _tvSubRenew: [{ msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'tvRenew', isEnd: true }],
-  _tvSubNewPlan: [{ action: 'listTVPlans', key: 'plan', value: (opt) => opt }, { msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'tvSub', isEnd: true }],
-  _rechargePin: [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: ePinDenominationMsg(), key: 'denomination', value: (opt) => epinDenominations[opt] }, { msg: 'Enter quantity', key: 'quantity', value: (input) => input }, { msg: 'What name should be on the card?', key: 'nameOnCard', value: (input) => input }, { action: 'rechargePin', isEnd: true }],
-  _waecRegPin: [{ isEnd: true }],
-  _waecCheckPin: [{ isEnd: true }],
-  _balThreshold: [{ action: 'checkBalance', isEnd: true }],
-};
-
-
+const serviceSteps = { ...mainSteps, ...subSteps };
 
 const page1 = () => {
-  const keys = Object.keys(serviceSteps);
+  const keys = Object.keys(mainSteps);
   let index = 1;
   let str = 'Select option';
   for (let key in keys) {
-    if (!keys[key].startsWith('_')) {
-      str += `\n${index}. ${capFirstChar(keys[key])}`;
-      index++;
-    }
+    str += `\n${index}. ${capFirstChar(keys[key])}`;
+    index++;
   }
   return str;
 }
@@ -389,19 +519,26 @@ const botProcess = async (msg, q, serviceKey) => {
 
   const update = {};
 
+  //previous step
   const prevMenuIndex = menuIndex - 1;
   const prevMenu = service[prevMenuIndex];
   if (prevMenu && prevMenu?.key) {
-    update[prevMenu?.key] = prevMenu?.value(input);
+    if (prevMenu?.value(input) != MENU_OPTION.invalid) {
+      update[prevMenu?.key] = prevMenu?.value(input);
+    } else {
+      menuIndex = prevMenuIndex;
+    }
   }
 
+  const menu = service[menuIndex]; //current step
+
+  //next step
   const nextMenuIndex = menuIndex + 1;
   const nextMenu = service[nextMenuIndex];
   if (nextMenu) {
     update.index = nextMenuIndex;
   }
-
-  const menu = service[menuIndex];
+  // }
 
   if (menu?.action == 'subMenu') {
     update.index = 0;
@@ -417,7 +554,8 @@ const botProcess = async (msg, q, serviceKey) => {
   }
 
   if (menu?.msg) {
-    bot.sendMessage(msg.chat.id, menu.msg);
+    const replyOption = menu?.replyOption ?? {};
+    bot.sendMessage(msg.chat.id, menu.msg, replyOption);
   } else if (menu?.action) {
     const q2 = await Session.findOne({ _id: q._id });
     const resp = await menuActions[menu?.action](msg, q2);
@@ -442,23 +580,65 @@ bot.on('message', async msg => {
       query.telegramId = msg.from.id;
     }
 
-    const q2 = await Session.findOne(query);
+    let q2 = await Session.findOne(query);
 
     if (q.length == 0 && !q2) {
-      botProcess(msg, q2, '_welcome');
-    } else if (msg.text == '.') {
+      botProcess(msg, q2, MENU_STEPS._welcome);
+    } else if (msg.text == '.' || msg.text == '/start') {
       if (q2) closeSession(q2._id);
-      bot.sendMessage(msg.chat.id, page1());
+      if (q.length != 0) {
+        bot.sendMessage(msg.chat.id, page1());
+      } else {
+        botProcess(msg, null, MENU_STEPS._welcome);
+      }
     } else if (!q2) {
-      const input = isNaN(msg.text) ? msg.text : parseInt(msg.text) - 1; //case of selecting a menu with a number (menu index). applicable to page 1 only OR entering a service key directly. e.g airtime
-      const serviceKey = Object.keys(serviceSteps)?.[input];
-      if (serviceKey) {
+      let serviceKey;
+      if (isNaN(msg.text) && msg.text.startsWith('/')) { //A command is entered e.g /airtime
+        serviceKey = menus.filter(i => i.command == msg.text.replace('/', ''))[0]?.key;
+      } else if (isNaN(msg.text)) { //A word is entered e.g airtime
+        serviceKey = msg.text;
+      } else { //A number is entered e.g 1 for airtime
+        const keys = Object.keys(mainSteps);
+        const opt = parseInt(msg.text);
+        if (opt <= keys.length) //ensure user option is not out of range of the keys array
+          serviceKey = keys[opt - 1];
+      }
+      if (mainSteps?.[serviceKey]) {
         botProcess(msg, q2, serviceKey);
-      } else { //other cases, e.g entering a text that does not match any service key
+      } else {
         bot.sendMessage(msg.chat.id, page1());
       }
     } else if (q2) {
-      botProcess(msg, q2, q2.options.service);
+      let serviceKey;
+      if (msg.text.startsWith('/')) { //change of command in the middle of an ongoing session, close the current session and proceed to the new request automatically
+        serviceKey = menus.filter(i => i.command == msg.text.replace('/', ''))[0]?.key;
+        if (mainSteps?.[serviceKey]) {
+          closeSession(q2._id);
+          q2 = null;
+        }
+      }
+
+      serviceKey = serviceKey ?? q2.options.service;
+
+      botProcess(msg, q2, serviceKey);
     }
   }
 });
+
+// replyOption: {
+//   reply_markup: {
+//     inline_keyboard: [
+//       [
+//         // {
+//         //   text: "Yes",
+//         //   callback_data: "btn_yes"
+//         // },
+//         {
+//           text: "Use my phone number",
+//           callback_data: "request_contact",
+//           request_contact: true,
+//         },
+//       ]
+//     ]
+//   },
+// },
