@@ -37,7 +37,7 @@ const menuActions = {
     const resp = await fetch(`${process.env.BASE_URL}/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstName: msg.from?.first_name, lastName: msg.from?.last_name, email: q.options.email, phone: q.options.phone, telegramId: msg.from.id }),
+      body: JSON.stringify({ firstName: msg.from?.first_name, lastName: msg.from?.last_name ?? msg.from?.username, email: q.options.email, phone: q.options.phone, telegramId: msg.from.id }),
     });
     const json = await resp.json();
     return json?.msg;
