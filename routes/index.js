@@ -1,6 +1,7 @@
 const express = require('express');
 
 const base = require('../controllers');
+const admin = require('../controllers/admin');
 const bot = require('../controllers/bot');
 const { auth } = require('../middleware/auth');
 
@@ -32,5 +33,7 @@ router.post('/callback', base.callback); //vtpass
 router.post('/webhook/epins', base.ePinsCallback);
 
 router.post('/bot', bot.telegramBot);
+
+router.get('/admin/balance', auth, admin.freeBalance);
 
 module.exports = router;

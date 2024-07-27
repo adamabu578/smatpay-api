@@ -16,6 +16,9 @@ const userSchema = new mongoose.Schema({
             last: { type: String, required: true, },
         },
     },
+    role: {
+        type: String
+    },
     balance: {
         type: Number,
         default: 0.00,

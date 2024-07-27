@@ -30,6 +30,7 @@ const sendTelegramDoc = async (chatId, filePath, option) => {
   })
 }
 
+exports.bot = bot;
 exports.sendTelegramDoc = sendTelegramDoc;
 
 const menuActions = {

@@ -22,6 +22,10 @@ exports.VENDORS = {
     EPINS: 'epins',
 };
 
+exports.ROLES = {
+    admin: 'admin',
+};
+
 exports.EXAM_PIN_TYPES = {
     'waec-registration': 'waec-registration',
     'waec-checker': 'waec',

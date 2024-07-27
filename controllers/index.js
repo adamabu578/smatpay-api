@@ -18,6 +18,7 @@ const { pExCheck, genRefNo, calcTotal } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
 const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE } = require("../classes/events");
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -53,6 +54,7 @@ exports.signUp = catchAsync(async (req, res, next) => {
   if (!q2) return next(new AppError(500, 'Could not create account.'));
 
   res.status(200).json({ status: "success", msg: "Account created." });
+  vEvent.emit(VEVENT_ACCOUNT_CREATED, q2._id);
 });
 
 exports.login = catchAsync(async (req, res, next) => {
@@ -153,6 +155,7 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       status = 'success';
       msg = obj.status == TRANSACTION_STATUS.DELIVERED ? 'Successful' : 'Request initiated';
     } else if (json.code == '018') { //Low balance
+      vEvent.emit(VEVENT_LOW_BALANCE, vendor); //emit low balance event
       obj.status = TRANSACTION_STATUS.FAILED;
       obj.statusDesc = 'Transaction failed';
       obj.refundStatus = REFUND_STATUS.PENDING;
@@ -179,6 +182,7 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       status = 'success';
       msg = 'Downloading...';
     } else if (json.code == 102) { //Low balance
+      vEvent.emit(VEVENT_LOW_BALANCE, vendor); //emit low balance event
       obj.status = TRANSACTION_STATUS.FAILED;
       obj.statusDesc = 'Transaction failed';
       obj.refundStatus = REFUND_STATUS.PENDING;
