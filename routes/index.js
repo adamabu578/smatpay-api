@@ -3,7 +3,7 @@ const express = require('express');
 const base = require('../controllers');
 const admin = require('../controllers/admin');
 const bot = require('../controllers/bot');
-const { auth } = require('../middleware/auth');
+const { auth, authAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -34,6 +34,6 @@ router.post('/webhook/epins', base.ePinsCallback);
 
 router.post('/bot', bot.telegramBot);
 
-router.get('/admin/balance', auth, admin.freeBalance);
+router.get('/admin/balance', authAdmin, admin.freeBalance);
 
 module.exports = router;

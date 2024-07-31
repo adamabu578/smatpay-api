@@ -24,25 +24,22 @@ vEvent.on(VEVENT_LOW_BALANCE, async (vendor) => {
 
 exports.freeBalance = catchAsync(async (req, res, next) => {
   const resp = await fetch(`${process.env.VTPASS_API}/balance`, {
-    headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
-  // if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
+  if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
   const json = await resp.json();
-  console.log('JSON :::', json);
+  if (json.code != 1) return next(new AppError(500, 'Balance (1) not available.'));
+  const bal = json.contents.balance;
 
-  const resp2 = await fetch(`${process.env.EPIN_API}/balance?apikey=${process.env.EPIN_KEY}`
-  //   , {
-  //   body: JSON.stringify({
-  //     apikey: process.env.EPIN_KEY,
-  //     service: "epin",
-  //     network: req.body[P.provider],
-  //     pinDenomination: DV[req.body[P.denomination]],
-  //     pinQuantity: req.body[P.quantity],
-  //     ref: transactionId
-  //   }),
-  // }
-);
-  if (resp2.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
-  const json2 = await resp2.json();
-  console.log('JSON :::', json2);
+  const resp2 = await fetch(`${process.env.EPIN_API}/balance?apikey=${process.env.EPIN_KEY}`);
+  if (resp2.status != 200) return next(new AppError(500, 'Balance (2) not available.'));
+  const bal2 = await resp2.json();
+
+  const q = await User.find({}, { balance: 1 });
+  let userBal = 0;
+  for (let i = 0; i < q.length; i++) {
+    userBal += q[i].balance;
+  }
+
+  res.status(200).json({ status: 'success', msg: 'Balanced fetched', data: { 'Balance (0)': userBal, 'Balance (1)': bal, 'Balance (2)': bal2, 'Balance (1+2)': bal + bal2, 'Balance (1+2)-(0)': (bal + bal2) - userBal } });
 });

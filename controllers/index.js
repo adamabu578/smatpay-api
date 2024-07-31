@@ -96,7 +96,7 @@ exports.profile = catchAsync(async (req, res, next) => {
     }
   ]);
 
-  res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] })
+  res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] });
 });
 
 const initTransaction = async (req, onError, onSuccess) => {
@@ -281,7 +281,8 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
   const type = req.query?.type == 'sme' ? '-sme-' : '-';
 
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}${type}data`, {
-    headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    // headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   const json = await resp.json();
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list bundles.'));
@@ -324,7 +325,8 @@ exports.listTVPlans = catchAsync(async (req, res, next) => {
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}`, {
-    headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    // headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   const json = await resp.json();
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list plans.'));
@@ -540,7 +542,8 @@ exports.getExamPIN = catchAsync(async (req, res, next) => {
   if (!types[req.query[P.type]]) return next(new AppError(400, 'Invalid exam type'));
 
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${types[req.query[P.type]]}`, {
-    headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    // headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   const json = await resp.json();
   console.log('JSON :::', json);

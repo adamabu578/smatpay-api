@@ -28,9 +28,9 @@ class Auth {
       // const query = isLive(req.account.secret) ? { liveKey: req.account.secret } : { testKey: req.account.secret };
       const query = { liveKey: req.account.secret };
       // console.log(query);
-      const q = await User.find(query);
+      const q = await User.find(query, { _id: 1, role: 1 });
       if (q?.length == 1) {
-        req.user = { ...req?.user, id: q[0]._id.toHexString() };
+        req.user = { ...req?.user, id: q[0]._id.toHexString(), role: q[0]?.role };
       }
     }
 
@@ -41,6 +41,16 @@ class Auth {
 exports.auth = (req, res, next) => {
   new Auth().auth(req, res, () => {
     if (req?.user) {
+      next();
+    } else {
+      return next(new AppError(403, 'Access denied'));
+    }
+  });
+};
+
+exports.authAdmin = (req, res, next) => {
+  new Auth().auth(req, res, () => {
+    if (req?.user?.role == 'admin') {
       next();
     } else {
       return next(new AppError(403, 'Access denied'));
