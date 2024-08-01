@@ -4,6 +4,7 @@ const AppError = require('../helpers/AppError');
 const catchAsync = require('../helpers/catchAsync');
 const { isLive } = require('../helpers/utils');
 const User = require('../models/user');
+const { ROLES } = require('../helpers/consts');
 
 class Auth {
   secret = process.env.AUTH_SECRET;
@@ -50,7 +51,7 @@ exports.auth = (req, res, next) => {
 
 exports.authAdmin = (req, res, next) => {
   new Auth().auth(req, res, () => {
-    if (req?.user?.role == 'admin') {
+    if (req?.user?.role == ROLES.admin) {
       next();
     } else {
       return next(new AppError(403, 'Access denied'));

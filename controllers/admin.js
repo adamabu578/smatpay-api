@@ -1,8 +1,9 @@
 const catchAsync = require("../helpers/catchAsync");
 const { VENDORS, ROLES } = require("../helpers/consts");
+const BigNumber = require('bignumber.js');
 
 const P = require('../helpers/params');
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE } = require("../classes/events");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR } = require("../classes/events");
 const User = require("../models/user");
 const { bot } = require("./bot");
 const fetch = require("node-fetch");
@@ -19,6 +20,14 @@ vEvent.on(VEVENT_LOW_BALANCE, async (vendor) => {
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });
   if (q.length != 0) {
     bot.sendMessage(q[0].uid?.telegramId, `Oops! Balance is running low on ${vendor}.`)
+  }
+});
+
+vEvent.on(VEVENT_TRANSACTION_ERROR, async (vendor, msg) => {
+  console.log('event :::', msg);
+  const q = await User.find({ role: ROLES.admin }, { uid: 1 });
+  if (q.length != 0) {
+    bot.sendMessage(q[0].uid?.telegramId, `${vendor} ::: ${msg}`)
   }
 });
 
@@ -41,5 +50,6 @@ exports.freeBalance = catchAsync(async (req, res, next) => {
     userBal += q[i].balance;
   }
 
-  res.status(200).json({ status: 'success', msg: 'Balanced fetched', data: { 'Balance (0)': userBal, 'Balance (1)': bal, 'Balance (2)': bal2, 'Balance (1+2)': bal + bal2, 'Balance (1+2)-(0)': (bal + bal2) - userBal } });
+  const _12 = BigNumber.sum(bal, bal2);
+  res.status(200).json({ status: 'success', msg: 'Balanced fetched', data: { 'Balance (0)': userBal, 'Balance (1)': bal, 'Balance (2)': bal2, 'Balance (1+2)': _12, 'Balance (1+2)-(0)': BigNumber(_12).minus(userBal) } });
 });

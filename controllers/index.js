@@ -18,7 +18,7 @@ const { pExCheck, genRefNo, calcTotal } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
 const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE } = require("../classes/events");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR } = require("../classes/events");
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -161,10 +161,11 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       obj.refundStatus = REFUND_STATUS.PENDING;
       msg = 'Transaction failed'; //'Pending transaction';
     } else {
+      msg = json?.content?.error ?? 'An error occured';
+      vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
       obj.status = TRANSACTION_STATUS.FAILED;
       obj.statusDesc = json?.response_description;
       obj.refundStatus = REFUND_STATUS.PENDING;
-      msg = json?.content?.error ?? 'An error occured';
     }
   } else if (vendor == VENDORS.EPINS) {
     obj.rawResp = json;
@@ -188,10 +189,11 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       obj.refundStatus = REFUND_STATUS.PENDING;
       msg = 'Transaction failed'; //'Pending transaction';
     } else {
+      msg = json?.description ?? 'An error occured';
+      vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
       obj.status = TRANSACTION_STATUS.FAILED;
       obj.statusDesc = json.description;
       obj.refundStatus = REFUND_STATUS.PENDING;
-      msg = json.description;
     }
   }
   res.status(respCode).json({ status, msg });
