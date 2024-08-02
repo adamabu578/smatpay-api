@@ -1,9 +1,9 @@
 const catchAsync = require("../helpers/catchAsync");
-const { VENDORS, ROLES } = require("../helpers/consts");
+const { VENDORS, ROLES, BIZ_KLUB_KEY } = require("../helpers/consts");
 const BigNumber = require('bignumber.js');
 
 const P = require('../helpers/params');
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR } = require("../classes/events");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
 const User = require("../models/user");
 const { bot } = require("./bot");
 const fetch = require("node-fetch");
@@ -12,22 +12,30 @@ const AppError = require("../helpers/AppError");
 vEvent.on(VEVENT_ACCOUNT_CREATED, async (userID) => {
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });
   if (q.length != 0) {
-    bot.sendMessage(q[0].uid?.telegramId, 'Hurray! An account was just created.')
+    bot.sendMessage(q[0].uid?.telegramId, 'REPORT ::: Hurray! An account was just created.')
   }
 });
 
-vEvent.on(VEVENT_LOW_BALANCE, async (vendor) => {
+vEvent.on(VEVENT_CHECK_BALANCE, async (vendor, balance) => {
+  if(isNaN(balance)) return;
+  if(balance > 20000) return;
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });
   if (q.length != 0) {
-    bot.sendMessage(q[0].uid?.telegramId, `Oops! Balance is running low on ${vendor}.`)
+    bot.sendMessage(q[0].uid?.telegramId, `REPORT ::: Oops! Balance is running low on ${vendor}.`)
+  }
+});
+
+vEvent.on(VEVENT_INSUFFICIENT_BALANCE, async (vendor) => {
+  const q = await User.find({ role: ROLES.admin }, { uid: 1 });
+  if (q.length != 0) {
+    bot.sendMessage(q[0].uid?.telegramId, `REPORT ::: Oops! Insufficient balance on ${vendor}.`)
   }
 });
 
 vEvent.on(VEVENT_TRANSACTION_ERROR, async (vendor, msg) => {
-  console.log('event :::', msg);
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });
   if (q.length != 0) {
-    bot.sendMessage(q[0].uid?.telegramId, `${vendor} ::: ${msg}`)
+    bot.sendMessage(q[0].uid?.telegramId, `REPORT ::: ${vendor} ::: ${msg}`)
   }
 });
 

@@ -1,6 +1,8 @@
 exports.TIMEZONE = 'Africa/Lagos';
 exports.DEFAULT_LOCALE = 'en-US';
 
+exports.BIZ_KLUB_KEY = btoa(`${process.env.BIZ_KLUB_API_KEY}|${process.env.BIZ_KLUB_PIN}`);
+
 exports.COMMISSION_TYPE = {
     BASE: '0',
     PERCENTAGE: '1',
@@ -18,8 +20,9 @@ exports.REFUND_STATUS = {
 };
 
 exports.VENDORS = {
-    VTPASS: 'vtpass',
-    EPINS: 'epins',
+    VTPASS: 'VTPass',
+    EPINS: 'ePINs',
+    BIZKLUB: 'BizKlub',
 };
 
 exports.ROLES = {

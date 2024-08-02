@@ -16,15 +16,16 @@ router.get('/balance', auth, base.balance);
 router.post('/topup/init', auth, base.topupInit);
 
 router.post('/airtime/vtu', auth, base.airtime);
-router.post('/airtime/pin', auth, base.generatePin);
 router.get('/data/bundles', auth, base.listDataBundles);
 router.post('/data', auth, base.subData);
 router.get('/tv/plans', auth, base.listTVPlans);
 router.post('/tv/card/verify', auth, base.verifySmartCardNo);
 router.post('/tv/subscribe', auth, base.tvSub);
 router.post('/tv/renew', auth, base.tvRenew);
+
 router.get('/exam/pin', auth, base.getExamPIN);
 router.post('/exam/pin', auth, base.buyExamPIN);
+router.post('/epin/airtime', auth, base.generatePin);
 
 router.get('/transactions', auth, base.listTransactions);
 // router.get('/transactions/merge', auth, base.mergeTransaction);

@@ -205,7 +205,7 @@ const menuActions = {
   },
   rechargePin: async (msg, q) => {
     try {
-      const resp = await fetch(`${process.env.BASE_URL}/airtime/pin`, {
+      const resp = await fetch(`${process.env.BASE_URL}/epin/airtime`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
         body: JSON.stringify({ provider: q.options.provider, denomination: q.options.denomination, quantity: q.options.quantity, nameOnCard: q.options.nameOnCard }),

@@ -16,9 +16,9 @@ const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, genRefNo, calcTotal } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES } = require("../helpers/consts");
+const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES, BIZ_KLUB_KEY } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR } = require("../classes/events");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -138,13 +138,24 @@ const initTransaction = async (req, onError, onSuccess) => {
 
 const updateTransaction = async (json) => {
   try {
-    await Transaction.updateOne({ transactionId: json.transactionId }, { status: json?.status, statusDesc: json?.statusDesc, refundStatus: json?.refundStatus, respObj: json?.respObj, rawResp: json?.rawResp });
+    const obj = {};
+    if (json?.status)
+      obj.status = json.status;
+    if (json?.statusDesc)
+      obj.statusDesc = json.statusDesc;
+    if (json?.refundStatus)
+      obj.refundStatus = json.refundStatu;
+    if (json?.respObj)
+      obj.respObj = json.respObj;
+    if (json?.rawResp)
+      obj.rawResp = json?.rawResp;
+    await Transaction.updateOne({ transactionId: json.transactionId }, obj);
   } catch (error) {
     console.log('updateTransaction', error);
   }
 }
 
-const afterTransaction = async (transactionId, json, res, vendor) => {
+const afterTransaction = (transactionId, json, vendor) => {
   const obj = { transactionId };
   let respCode = 500, status = 'error', msg;
   if (vendor == VENDORS.VTPASS) {
@@ -155,7 +166,7 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       status = 'success';
       msg = obj.status == TRANSACTION_STATUS.DELIVERED ? 'Successful' : 'Request initiated';
     } else if (json.code == '018') { //Low balance
-      vEvent.emit(VEVENT_LOW_BALANCE, vendor); //emit low balance event
+      vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
       obj.status = TRANSACTION_STATUS.FAILED;
       obj.statusDesc = 'Transaction failed';
       obj.refundStatus = REFUND_STATUS.PENDING;
@@ -165,6 +176,27 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
       obj.status = TRANSACTION_STATUS.FAILED;
       obj.statusDesc = json?.response_description;
+      obj.refundStatus = REFUND_STATUS.PENDING;
+    }
+  } else if (vendor == VENDORS.BIZKLUB) {
+    if (json.statusCode == 200) {
+      vEvent.emit(VEVENT_CHECK_BALANCE, vendor, json?.wallet); //emit low balance event
+      obj.status = TRANSACTION_STATUS.DELIVERED;
+      obj.statusDesc = json.status;
+      respCode = 200;
+      status = 'success';
+      msg = 'Successful';
+    } else if (json.statusCode == 204) { //Low balance
+      vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = 'Transaction failed';
+      obj.refundStatus = REFUND_STATUS.PENDING;
+      msg = 'Transaction failed'; //'Pending transaction';
+    } else {
+      msg = json?.message ?? 'An error occured';
+      vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
+      obj.status = TRANSACTION_STATUS.FAILED;
+      obj.statusDesc = json?.message;
       obj.refundStatus = REFUND_STATUS.PENDING;
     }
   } else if (vendor == VENDORS.EPINS) {
@@ -183,7 +215,7 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       status = 'success';
       msg = 'Downloading...';
     } else if (json.code == 102) { //Low balance
-      vEvent.emit(VEVENT_LOW_BALANCE, vendor); //emit low balance event
+      vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
       obj.status = TRANSACTION_STATUS.FAILED;
       obj.statusDesc = 'Transaction failed';
       obj.refundStatus = REFUND_STATUS.PENDING;
@@ -196,9 +228,7 @@ const afterTransaction = async (transactionId, json, res, vendor) => {
       obj.refundStatus = REFUND_STATUS.PENDING;
     }
   }
-  res.status(respCode).json({ status, msg });
-  updateTransaction(obj);
-  return obj;
+  return { respCode, status, msg, obj };
 }
 
 const singleTopup = catchAsync(async (req, res, next) => {
@@ -226,7 +256,9 @@ const singleTopup = catchAsync(async (req, res, next) => {
     });
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
-    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj);
   });
 });
 
@@ -318,7 +350,9 @@ exports.subData = catchAsync(async (req, res, next) => {
       }),
     });
     const json = await resp.json();
-    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj);
   });
 });
 
@@ -385,7 +419,9 @@ exports.tvSub = catchAsync(async (req, res, next) => {
       }),
     });
     const json = await resp.json();
-    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj);
   });
 });
 
@@ -418,11 +454,13 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
       }),
     });
     const json = await resp.json();
-    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj);
   });
 });
 
-const createPDF = async (uid, provider, denomination, nameOnCard, pinsArr) => {
+const createPDF = async (uid, nameOnCard, pinsArr) => {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
   let html = `<!DOCTYPE html>
@@ -477,7 +515,7 @@ const createPDF = async (uid, provider, denomination, nameOnCard, pinsArr) => {
     html += `<div class="card">
             <div class="top">
                 <span>${nameOnCard}</span>
-                <span>${provider} &#8358;${denomination}</span>
+                <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
             </div>
             <p>PIN <span class="bold">${pinsArr[i].pin}</span></p>
             <p style="font-size:12px;">S/N ${pinsArr[i].sn}</p>
@@ -500,7 +538,8 @@ exports.generatePin = catchAsync(async (req, res, next) => {
   if (isNaN(req.body[P.denomination])) return next(new AppError(400, `${P.denomination} must be a number`));
   if (isNaN(req.body[P.quantity])) return next(new AppError(400, `${P.quantity} must be a number`));
 
-  const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations variations
+  const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations 
+  const networkCodes = { 'mtn': '803', 'airtel': '802', 'glo': '805', '9mobile': '809' };
 
   const q = await Service.findOne({ name: 'epin' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
@@ -512,27 +551,79 @@ exports.generatePin = catchAsync(async (req, res, next) => {
   req.body[P.commissionType] = COMMISSION_TYPE.BASE;
   req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
 
+  const networkCode = networkCodes[req.body[P.provider]];
+
   initTransaction(req, next, async (transactionId, option) => {
-    const resp = await fetch(`${process.env.EPIN_API}/epin/`, {
+    const resp = await fetch(process.env.BIZ_KLUB_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        apikey: process.env.EPIN_KEY,
-        service: "epin",
-        network: req.body[P.provider],
-        pinDenomination: DV[req.body[P.denomination]],
+        requestType: "EPIN",
+        networkCode: networkCode,
+        pinDenomination: req.body[P.denomination],
         pinQuantity: req.body[P.quantity],
-        ref: transactionId
+        pinFormat: "Standard",
+        requestReference: transactionId,
+        encodedKey: BIZ_KLUB_KEY
       }),
     });
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
-    const obj = await afterTransaction(transactionId, json, res, VENDORS.EPINS);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.BIZKLUB);
+    updateTransaction(obj);
+
+    if (respCode != 200) return next(new AppError(respCode, msg));
+
+    const resp2 = await fetch(process.env.BIZ_KLUB_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestType: "F-EPIN",
+        networkCode: networkCode,
+        pinFormat: "Standard",
+        requestReference: transactionId,
+        encodedKey: BIZ_KLUB_KEY
+      }),
+    });
+    const json2 = await resp2.json();
+    if (json2?.statusCode != 200) return next(new AppError(respCode, 'Oops! incomplete request.'));
+    obj.respObj = {
+      pins: json2.pins.map(i => {
+        const item = i.pindata.split(',');
+        return { pin: item[1], sn: item[0] };
+      })
+    };
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj);
     if (obj.respObj) {
-      const path = await createPDF(option.id, req.body[P.provider].toUpperCase(), req.body[P.denomination], req.body[P.nameOnCard], obj.respObj.pins);
+      const pinArr = obj.respObj.pins.map(i => ({ ...i, provider: req.body[P.provider].toUpperCase(), denomination: req.body[P.denomination] }));
+      const path = await createPDF(option.id, req.body[P.nameOnCard], pinArr);
       const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} (${req.body[P.quantity]}).pdf`;
       sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
     }
+
+    // const resp = await fetch(`${process.env.EPIN_API}/epin/`, {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     apikey: process.env.EPIN_KEY,
+    //     service: "epin",
+    //     network: req.body[P.provider],
+    //     pinDenomination: DV[req.body[P.denomination]],
+    //     pinQuantity: req.body[P.quantity],
+    //     ref: transactionId
+    //   }),
+    // });
+    // if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
+    // const json = await resp.json();
+    // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
+    // res.status(respCode).json({ status, msg });
+    // updateTransaction(obj);
+    // if (obj.respObj) {
+    //   const path = await createPDF(option.id, req.body[P.provider].toUpperCase(), req.body[P.denomination], req.body[P.nameOnCard], obj.respObj.pins);
+    //   const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} (${req.body[P.quantity]}).pdf`;
+    //   sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
+    // }
   });
 });
 
@@ -582,12 +673,14 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
       }),
     });
     const json = await resp.json();
-    afterTransaction(transactionId, json, res, VENDORS.VTPASS);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj);
   });
 });
 
 exports.listTransactions = catchAsync(async (req, res, next) => {
-  const { transactionId, recipient, status, tags } = req.query;
+  const { transactionId, recipient, status, tags, field, nameOnCard, format } = req.query;
   const filter = {};
   if (transactionId) {
     filter.transactionId = { $in: transactionId.split(',').filter(i => i != '') };
@@ -601,33 +694,84 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
   if (tags) {
     filter.tags = { $in: tags.split(',').filter(i => i != '') };
   }
-  const q = await Transaction.aggregate([
+  const arr = [
     {
       $match: filter
     },
     {
       $limit: 50
-    },
-    {
-      $project: { service: '$serviceId', recipient: 1, unitPrice: 1, quantity: 1, discount: 1, totalAmount: 1, status: 1, tags: 1, createdAt: 1, statusDescription: '$statusDesc' }
-    },
-    {
-      $project: { _id: 0 }
     }
-  ]);
-
+  ];
+  arr.push({
+    $project: field && field == 'pin'
+      ? {
+        service: '$serviceId',
+        unitPrice: 1,
+        quantity: 1,
+        respObj: 1,
+      }
+      : {
+        service: '$serviceId',
+        recipient: 1,
+        unitPrice: 1,
+        quantity: 1,
+        discount: 1,
+        totalAmount: 1,
+        status: 1,
+        tags: 1,
+        createdAt: 1,
+        statusDescription: '$statusDesc'
+      }
+  });
+  arr.push({
+    $project: { _id: 0 }
+  });
+  const q = await Transaction.aggregate(arr);
   const q2 = q.length > 0 ? await Service.find() : [];
   const services = {};
-  for (let i = 0; i < q2.length; i++) {
-    services[q2[i]._id] = q2[i].title;
+
+  const json = { status: 'success', msg: 'Transactions listed' };
+  if (field && field == 'pin') {
+    for (let i = 0; i < q2.length; i++) {
+      services[q2[i]._id] = q2[i].provider;
+    }
+
+    const pinArr = [], labelObj = {};
+    for (let i = 0; i < q.length; i++) {
+      const pins = q[i].respObj?.pins, provider = services[q[i].service], denomination = q[i].unitPrice;
+      for (let j = 0; j < pins?.length; j++) {
+        pinArr.push({ ...pins[j], provider, denomination });
+        labelObj[`${provider} N${denomination}`] = (labelObj?.[`${provider} N${denomination}`] ?? 0) + 1;
+      }
+    }
+
+    const user = await User.findOne({ _id: req.user.id }, { uid: 1 });
+
+    const path = await createPDF(user._id, nameOnCard, pinArr);
+    let fileName = '';
+    for (const key in labelObj) {
+      fileName += key + `[${labelObj[key]}] `;
+    }
+    if (format == 'pdf') {
+      fileName += '.pdf';
+      sendTelegramDoc(user.uid.telegramId, path, { fileName, deleteOnSent: true });
+      json.msg = 'File sent to your telegram';
+    } else {
+      json.description = fileName;
+      json.pins = pinArr;
+    }
+  } else {
+    for (let i = 0; i < q2.length; i++) {
+      services[q2[i]._id] = q2[i].title;
+    }
+
+    const list = q.map(i => {
+      const d = new Date(new Date(i.createdAt).toLocaleString(DEFAULT_LOCALE, { timeZone: TIMEZONE }));
+      return { ...i, service: services[i.service], createdAt: d.toLocaleString() };
+    });
+    json.data = list;
   }
-
-  const list = q.map(i => {
-    const d = new Date(new Date(i.createdAt).toLocaleString(DEFAULT_LOCALE, { timeZone: TIMEZONE }));
-    return { ...i, service: services[i.service], createdAt: d.toLocaleString() };
-  });
-
-  res.status(200).json({ status: 'success', msg: 'Transactions listed', data: list });
+  res.status(200).json(json);
 });
 
 exports.balance = catchAsync(async (req, res, next) => {
