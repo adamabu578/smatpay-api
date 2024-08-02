@@ -23,8 +23,8 @@ router.post('/tv/card/verify', auth, base.verifySmartCardNo);
 router.post('/tv/subscribe', auth, base.tvSub);
 router.post('/tv/renew', auth, base.tvRenew);
 
-router.get('/exam/pin', auth, base.getExamPIN);
-router.post('/exam/pin', auth, base.buyExamPIN);
+router.get('/epin/exam', auth, base.getExamPIN);
+router.post('/epin/exam', auth, base.buyExamPIN);
 router.post('/epin/airtime', auth, base.generatePin);
 
 router.get('/transactions', auth, base.listTransactions);

@@ -16,7 +16,7 @@ const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, genRefNo, calcTotal } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES, BIZ_KLUB_KEY } = require("../helpers/consts");
+const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
 const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
 
@@ -539,7 +539,6 @@ exports.generatePin = catchAsync(async (req, res, next) => {
   if (isNaN(req.body[P.quantity])) return next(new AppError(400, `${P.quantity} must be a number`));
 
   const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations 
-  const networkCodes = { 'mtn': '803', 'airtel': '802', 'glo': '805', '9mobile': '809' };
 
   const q = await Service.findOne({ name: 'epin' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
@@ -551,7 +550,7 @@ exports.generatePin = catchAsync(async (req, res, next) => {
   req.body[P.commissionType] = COMMISSION_TYPE.BASE;
   req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
 
-  const networkCode = networkCodes[req.body[P.provider]];
+  const networkCode = BIZ_KLUB_NETWORK_CODES[req.body[P.provider]];
 
   initTransaction(req, next, async (transactionId, option) => {
     const resp = await fetch(process.env.BIZ_KLUB_API, {
@@ -598,7 +597,7 @@ exports.generatePin = catchAsync(async (req, res, next) => {
     if (obj.respObj) {
       const pinArr = obj.respObj.pins.map(i => ({ ...i, provider: req.body[P.provider].toUpperCase(), denomination: req.body[P.denomination] }));
       const path = await createPDF(option.id, req.body[P.nameOnCard], pinArr);
-      const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} (${req.body[P.quantity]}).pdf`;
+      const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} [${req.body[P.quantity]}].pdf`;
       sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
     }
 
@@ -638,11 +637,11 @@ exports.getExamPIN = catchAsync(async (req, res, next) => {
     // headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
-  const json = await resp.json();
-  console.log('JSON :::', json);
-  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list plans.'));
+  const json = await resp.json(); 
+  console.log('JSON :::', json?.content?.varations); 
+  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
 
-  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.variations });
+  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.varations });
 });
 
 exports.buyExamPIN = catchAsync(async (req, res, next) => {
