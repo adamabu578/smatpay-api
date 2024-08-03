@@ -17,8 +17,9 @@ const AppError = require("../helpers/AppError");
 const { pExCheck, genRefNo, calcTotal, calcServicePrice } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
 const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES } = require("../helpers/consts");
-const { sendTelegramDoc } = require("./bot");
+const { sendTelegramDoc, bot } = require("./bot");
 const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
+const { updateTransaction, afterTransaction } = require("../helpers/dbHelper");
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -185,101 +186,6 @@ const initTransaction2 = async (req, service, onError, onSuccess) => {
     return onError(new AppError(500, 'Transaction initiation error'));
   }
 };
-
-const updateTransaction = async (json) => {
-  try {
-    const obj = {};
-    if (json?.status)
-      obj.status = json.status;
-    if (json?.statusDesc)
-      obj.statusDesc = json.statusDesc;
-    if (json?.refundStatus)
-      obj.refundStatus = json.refundStatu;
-    if (json?.respObj)
-      obj.respObj = json.respObj;
-    if (json?.rawResp)
-      obj.rawResp = json?.rawResp;
-    await Transaction.updateOne({ transactionId: json.transactionId }, obj);
-  } catch (error) {
-    console.log('updateTransaction', error);
-  }
-}
-
-const afterTransaction = (transactionId, json, vendor) => {
-  const obj = { transactionId };
-  let respCode = 500, status = 'error', msg;
-  if (vendor == VENDORS.VTPASS) {
-    if (json.code == '000') {
-      obj.status = json.content.transactions.status;
-      obj.statusDesc = json?.response_description;
-      respCode = obj.status == TRANSACTION_STATUS.DELIVERED ? 200 : 201;
-      status = 'success';
-      msg = obj.status == TRANSACTION_STATUS.DELIVERED ? 'Successful' : 'Request initiated';
-    } else if (json.code == '018') { //Low balance
-      vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = 'Transaction failed';
-      obj.refundStatus = REFUND_STATUS.PENDING;
-      msg = 'Transaction failed'; //'Pending transaction';
-    } else {
-      msg = json?.content?.error ?? 'An error occured';
-      vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = json?.response_description;
-      obj.refundStatus = REFUND_STATUS.PENDING;
-    }
-  } else if (vendor == VENDORS.BIZKLUB) {
-    if (json.statusCode == 200) {
-      vEvent.emit(VEVENT_CHECK_BALANCE, vendor, json?.wallet); //emit low balance event
-      obj.status = TRANSACTION_STATUS.DELIVERED;
-      obj.statusDesc = json.status;
-      respCode = 200;
-      status = 'success';
-      msg = 'Successful';
-    } else if (json.statusCode == 204) { //Low balance
-      vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = 'Transaction failed';
-      obj.refundStatus = REFUND_STATUS.PENDING;
-      msg = 'Transaction failed'; //'Pending transaction';
-    } else {
-      msg = json?.message ?? 'An error occured';
-      vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = json?.message;
-      obj.refundStatus = REFUND_STATUS.PENDING;
-    }
-  } else if (vendor == VENDORS.EPINS) {
-    obj.rawResp = json;
-    if (json.code == 101) {
-      obj.status = TRANSACTION_STATUS.DELIVERED;
-      obj.statusDesc = json.description.status;
-      const pinArr = json.description.PIN.split('\n');
-      obj.respObj = {
-        pins: pinArr.map(i => {
-          const item = i.split(',');
-          return { pin: item[0], sn: item[1] };
-        })
-      };
-      respCode = 200;
-      status = 'success';
-      msg = 'Downloading...';
-    } else if (json.code == 102) { //Low balance
-      vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = 'Transaction failed';
-      obj.refundStatus = REFUND_STATUS.PENDING;
-      msg = 'Transaction failed'; //'Pending transaction';
-    } else {
-      msg = json?.description ?? 'An error occured';
-      vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
-      obj.status = TRANSACTION_STATUS.FAILED;
-      obj.statusDesc = json.description;
-      obj.refundStatus = REFUND_STATUS.PENDING;
-    }
-  }
-  return { respCode, status, msg, obj };
-}
 
 const singleTopup = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount]);
@@ -582,7 +488,7 @@ const createPDF = async (uid, nameOnCard, pinsArr) => {
   return path;
 }
 
-exports.generatePin = catchAsync(async (req, res, next) => {
+exports.genAirtimePin = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.denomination, P.quantity, P.nameOnCard]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
   if (isNaN(req.body[P.denomination])) return next(new AppError(400, `${P.denomination} must be a number`));
@@ -597,7 +503,7 @@ exports.generatePin = catchAsync(async (req, res, next) => {
   req.body[P.recipient] = 'N/A';
   req.body[P.provider] = req.body[P.provider].toLowerCase();
   req.body[P.amount] = req.body[P.denomination];
-  req.body[P.commissionType] = COMMISSION_TYPE.BASE;
+  req.body[P.commissionType] = COMMISSION_TYPE.PRICE;
   req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
 
   const networkCode = BIZ_KLUB_NETWORK_CODES[req.body[P.provider]];
@@ -644,7 +550,7 @@ exports.generatePin = catchAsync(async (req, res, next) => {
     };
     res.status(respCode).json({ status, msg });
     updateTransaction(obj);
-    if (obj.respObj) {
+    if (obj?.respObj) {
       const pinArr = obj.respObj.pins.map(i => ({ ...i, provider: req.body[P.provider].toUpperCase(), denomination: req.body[P.denomination] }));
       const path = await createPDF(option.id, req.body[P.nameOnCard], pinArr);
       const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} [${req.body[P.quantity]}].pdf`;
@@ -696,16 +602,16 @@ exports.getExamPIN = catchAsync(async (req, res, next) => {
 
   res.status(200).json({
     status: 'success',
-    msg: 'Varations listed',
+    msg: 'Variations listed',
     data: {
       name: q.title,
-      variations: json?.content?.variations?.map(i => ({ ...i, variation_amount: calcServicePrice(q, { vendorPrice: i.variation_amount }) }))
+      variations: (json?.content?.variations ?? json?.content?.varations)?.map(i => ({ ...i, variation_amount: calcServicePrice(q, { vendorPrice: i.variation_amount }) }))
     }
   });
 });
 
 const getVariationAmtFromVTPassJsonResp = (json, variationCode) => {
-  const varation = json?.content?.variations?.filter(i => i?.variation_code == variationCode)[0];
+  const varation = (json?.content?.variations ?? json?.content?.varations)?.filter(i => i?.variation_code == variationCode)[0];
   return varation?.variation_amount;
 }
 
@@ -713,12 +619,15 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.serviceCode, P.variationCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
+  const { format } = req.query;
+
   const service = await Service.findOne({ code: req.body[P.serviceCode] });
   if (!service) return next(new AppError(500, 'Invalid service type'));
 
-  const json = await getVariations(q?.vendorCode, next);
-  const amount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
-  if (!amount) return next(new AppError(400, 'Invalid variation code'));
+  const json = await getVariations(service?.vendorCode, next);
+  const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
+  if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
+  const amount = calcServicePrice(service, { vendorPrice: varationAmount });
 
   if (!req.body?.[P.recipient]) {
     const q = await User.findOne({ role: ROLES.admin }, { uid: 1 });
@@ -726,29 +635,37 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   }
 
   req.body[P.amount] = amount;
+  req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
-  // req.body[P.serviceId] = q._id;
-  // req.body[P.provider] = req.body[P.provider].toLowerCase();
-  // req.body[P.commissionType] = COMMISSION_TYPE.BASE;
-  // req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
-
-  initTransaction2(req, service, next, async (transactionId) => {
+  initTransaction2(req, service, next, async (transactionId, option) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
       body: JSON.stringify({
         request_id: transactionId,
-        serviceID: req.body[P.provider],
-        variation_code: req.body[P.bundleCode],
-        // amount: req.body[P.amount],
+        serviceID: service.vendorCode,
+        variation_code: req.body[P.variationCode],
         quantity: req.body[P.quantity],
         phone: req.body[P.recipient]
       }),
     });
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    res.status(respCode).json({ status, msg });
     updateTransaction(obj);
+    let jsonResp = { status, msg };
+    if (obj?.respObj) {
+      let fileName = `${service.title} [${req.body[P.quantity]}]`;
+      if (format == 'pdf') {
+        fileName += '.pdf';
+        // sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
+        // bot.sendMessage(option.telegramId, JSON.stringify(obj.respObj));
+        jsonResp.msg = 'File sent to your telegram';
+      } else {
+        jsonResp.description = fileName;
+        jsonResp = { ...jsonResp, ...obj?.respObj };
+      }
+    }
+    res.status(respCode).json(jsonResp);
   });
 });
 

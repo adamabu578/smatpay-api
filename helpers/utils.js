@@ -6,7 +6,7 @@ exports.pExCheck = (reqParams, array) => {
     let resp = [];
     reqParams = JSON.parse(JSON.stringify(reqParams));
     array.forEach(param => {
-        if (!reqParams.hasOwnProperty(param) || reqParams[param] == "") {
+        if (!reqParams.hasOwnProperty(param) || JSON.stringify(reqParams[param]) == '') {
             resp.push(param);
         }
     });
@@ -38,7 +38,7 @@ exports.calcTotal = (unitPrice, qty, unitCommission, commissionType) => {
     let unitAmt, unitComm;
     if (isNaN(unitPrice) || isNaN(qty) || isNaN(unitCommission)) throw new Error('NaN error');
 
-    if (commissionType == COMMISSION_TYPE.BASE) {
+    if (commissionType == COMMISSION_TYPE.PRICE) {
         unitAmt = BigNumber(unitPrice).minus(unitCommission);
         unitComm = unitCommission;
     } else if (commissionType == COMMISSION_TYPE.PERCENTAGE) {
