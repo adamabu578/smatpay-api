@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const fetch = require('node-fetch');
 const randtoken = require('rand-token');
 const { uid } = require("uid");
-const BigNumber = require('bignumber.js');
+const { default: BigNumber } = require('bignumber.js');
 const puppeteer = require('puppeteer');
 
 const catchAsync = require("../helpers/catchAsync");
@@ -14,9 +14,9 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, genRefNo, calcTotal } = require("../helpers/utils");
+const { pExCheck, genRefNo, calcTotal, calcServicePrice } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, EXAM_PIN_TYPES, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES } = require("../helpers/consts");
+const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
 const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
 
@@ -136,6 +136,56 @@ const initTransaction = async (req, onError, onSuccess) => {
   }
 };
 
+const initTransaction2 = async (req, service, onError, onSuccess) => {
+  try {
+    const missing = pExCheck(req.body, [P.recipient, P.amount]);
+    if (missing.length != 0) return onError(new AppError(400, 'Missing fields.', missing));
+
+    const user = await User.findOne({ _id: req.user.id }, { 'uid.telegramId': 1, balance: 1, commission: 1 });
+    const unitCommission = user.commission?.[service.code] ?? 0;
+
+    const qty = req.body?.[P.quantity] ?? 1;
+    const amount = req.body[P.amount];
+
+    const [totalAmount, commission] = calcTotal(amount, qty, unitCommission, service.commissionMode);
+    // console.log('totalAmount', totalAmount);
+
+    const balance = user.balance;
+    // console.log('balance', balance);
+    const balanceAfter = BigNumber(balance).minus(totalAmount);
+    // console.log('balanceAfter', balanceAfter);
+    if (balanceAfter < 0) return onError(new AppError(402, 'Insufficient balance'));
+
+    if (req.body?.tags) {
+      const q3 = await Transaction.find({ userId: user._id, recipient: req.body[P.recipient], tags: req.body.tags });
+      if (q3.length != 0) return onError(new AppError(400, 'Duplicate transaction')); //transaction with tags for recipient already exist
+    }
+
+    const q4 = await User.updateOne({ _id: user._id }, { balance: balanceAfter });
+    if (q4?.modifiedCount != 1) return onError(new AppError(500, 'Account error'));
+
+    const transactionId = genRefNo();
+    await Transaction.create({
+      userId: user._id,
+      transactionId,
+      serviceId: service._id,
+      recipient: req.body[P.recipient],
+      unitPrice: amount,
+      quantity: qty,
+      commission,
+      amount,
+      totalAmount,
+      balanceBefore: balance,
+      balanceAfter,
+      tags: req.body?.tags
+    });
+    onSuccess(transactionId, { id: user._id, telegramId: user.uid.telegramId });
+  } catch (error) {
+    console.log(error);
+    return onError(new AppError(500, 'Transaction initiation error'));
+  }
+};
+
 const updateTransaction = async (json) => {
   try {
     const obj = {};
@@ -235,7 +285,7 @@ const singleTopup = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ name: 'airtime' }, { _id: 1 });
+  const q = await Service.findOne({ code: 'airtime' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   req.body[P.serviceId] = q._id;
@@ -263,7 +313,7 @@ const singleTopup = catchAsync(async (req, res, next) => {
 });
 
 const bulkTopup = catchAsync(async (req, res, next) => {
-  const q = await Service.findOne({ name: 'airtime' }, { _id: 1 });
+  const q = await Service.findOne({ code: 'airtime' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   res.status(201).json({ code: '000', msg: 'Transaction initiated' });
@@ -328,7 +378,7 @@ exports.subData = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.bundleCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ name: 'data' }, { _id: 1 });
+  const q = await Service.findOne({ code: 'data' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   req.body[P.serviceId] = q._id;
@@ -392,7 +442,7 @@ exports.tvSub = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.planId, P.amount, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ name: 'cable-tv' }, { _id: 1 });
+  const q = await Service.findOne({ code: 'cable-tv' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   req.body[P.recipient] = req.body[P.cardNumber];
@@ -429,7 +479,7 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.amount, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ name: 'cable-tv' }, { _id: 1 });
+  const q = await Service.findOne({ code: 'cable-tv' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   req.body[P.recipient] = req.body[P.cardNumber];
@@ -540,7 +590,7 @@ exports.generatePin = catchAsync(async (req, res, next) => {
 
   const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations 
 
-  const q = await Service.findOne({ name: 'epin' }, { _id: 1 });
+  const q = await Service.findOne({ code: 'epin' }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   req.body[P.serviceId] = q._id;
@@ -626,47 +676,71 @@ exports.generatePin = catchAsync(async (req, res, next) => {
   });
 });
 
+const getVariations = async (vendorCode, next) => {
+  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
+    headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
+  });
+  const json = await resp.json();
+  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
+  return json;
+}
+
 exports.getExamPIN = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.query, [P.type]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const types = EXAM_PIN_TYPES;
-  if (!types[req.query[P.type]]) return next(new AppError(400, 'Invalid exam type'));
+  const q = await Service.findOne({ code: req.query[P.type] });
+  if (!q) return next(new AppError(500, 'Invalid service type'));
 
-  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${types[req.query[P.type]]}`, {
-    // headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-    headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
+  const json = await getVariations(q?.vendorCode, next);
+
+  res.status(200).json({
+    status: 'success',
+    msg: 'Varations listed',
+    data: {
+      name: q.title,
+      variations: json?.content?.variations?.map(i => ({ ...i, variation_amount: calcServicePrice(q, { vendorPrice: i.variation_amount }) }))
+    }
   });
-  const json = await resp.json(); 
-  console.log('JSON :::', json?.content?.varations); 
-  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
-
-  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.varations });
 });
 
+const getVariationAmtFromVTPassJsonResp = (json, variationCode) => {
+  const varation = json?.content?.variations?.filter(i => i?.variation_code == variationCode)[0];
+  return varation?.variation_amount;
+}
+
 exports.buyExamPIN = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.bundleCode]);
+  const missing = pExCheck(req.body, [P.serviceCode, P.variationCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ name: 'data' }, { _id: 1 });
-  if (!q) return next(new AppError(500, 'Service error'));
+  const service = await Service.findOne({ code: req.body[P.serviceCode] });
+  if (!service) return next(new AppError(500, 'Invalid service type'));
 
-  const types = EXAM_PIN_TYPES;
+  const json = await getVariations(q?.vendorCode, next);
+  const amount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
+  if (!amount) return next(new AppError(400, 'Invalid variation code'));
 
-  req.body[P.serviceId] = q._id;
-  req.body[P.provider] = req.body[P.provider].toLowerCase();
-  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
-  req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
+  if (!req.body?.[P.recipient]) {
+    const q = await User.findOne({ role: ROLES.admin }, { uid: 1 });
+    req.body[P.recipient] = q.uid.phone;
+  }
 
-  initTransaction(req, next, async (transactionId) => {
+  req.body[P.amount] = amount;
+
+  // req.body[P.serviceId] = q._id;
+  // req.body[P.provider] = req.body[P.provider].toLowerCase();
+  // req.body[P.commissionType] = COMMISSION_TYPE.BASE;
+  // req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
+
+  initTransaction2(req, service, next, async (transactionId) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
       body: JSON.stringify({
         request_id: transactionId,
-        serviceID: `${req.body[P.provider]}-data`,
+        serviceID: req.body[P.provider],
         variation_code: req.body[P.bundleCode],
-        amount: req.body[P.amount],
+        // amount: req.body[P.amount],
         quantity: req.body[P.quantity],
         phone: req.body[P.recipient]
       }),

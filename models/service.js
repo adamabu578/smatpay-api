@@ -1,10 +1,11 @@
 const { default: mongoose } = require("mongoose");
+const { COMMISSION_TYPE } = require("../helpers/consts");
 
 const serviceSchema = new mongoose.Schema({
     parent: {
         type: mongoose.Types.ObjectId
     },
-    name: {
+    code: {
         type: String,
         required: true,
         unique: true,
@@ -16,6 +17,25 @@ const serviceSchema = new mongoose.Schema({
     provider: {
         type: String,
         required: true,
+    },
+    // costPrice: {
+    //     type: Number,
+    // },
+    unitCharge: {
+        type: Number,
+        required: true,
+    },
+    // sellingPrice: {
+    //     type: Number,
+    //     required: true,
+    // },
+    vendorCode: {
+        type: String
+    },
+    commissionMode: {
+        type: Number,
+        required: true,
+        default: COMMISSION_TYPE.PERCENTAGE
     },
 });
 

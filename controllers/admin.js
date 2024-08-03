@@ -1,6 +1,6 @@
 const catchAsync = require("../helpers/catchAsync");
 const { VENDORS, ROLES, BIZ_KLUB_KEY } = require("../helpers/consts");
-const BigNumber = require('bignumber.js');
+const { default: BigNumber } = require('bignumber.js');
 
 const P = require('../helpers/params');
 const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");

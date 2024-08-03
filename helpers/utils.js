@@ -1,5 +1,6 @@
 const randtoken = require('rand-token');
 const { COMMISSION_TYPE, DEFAULT_LOCALE } = require('./consts');
+const { default: BigNumber } = require('bignumber.js');
 
 exports.pExCheck = (reqParams, array) => {
     let resp = [];
@@ -28,17 +29,21 @@ exports.genRefNo = (str) => {
     return `${d[2]}${d[1]}${d[0]}${t[0]}${t[1]}${rand}`;
 };
 
+exports.calcServicePrice = (service, { vendorPrice, customer }) => {
+    return BigNumber.sum(BigNumber.sum(service?.unitPrice ?? 0, vendorPrice ?? 0), service?.unitCharge ?? 0);
+}
+
 exports.calcTotal = (unitPrice, qty, unitCommission, commissionType) => {
     const formatter = new Intl.NumberFormat(DEFAULT_LOCALE, { useGrouping: false, roundingMode: 'floor', maximumFractionDigits: 2 });
     let unitAmt, unitComm;
     if (isNaN(unitPrice) || isNaN(qty) || isNaN(unitCommission)) throw new Error('NaN error');
 
     if (commissionType == COMMISSION_TYPE.BASE) {
-        unitAmt = unitPrice - unitCommission;
+        unitAmt = BigNumber(unitPrice).minus(unitCommission);
         unitComm = unitCommission;
     } else if (commissionType == COMMISSION_TYPE.PERCENTAGE) {
         unitComm = formatter.format((unitPrice * unitCommission) / 100);
-        unitAmt = unitPrice - unitComm;
+        unitAmt = BigNumber(unitPrice).minus(unitComm);
     } else {
         throw new Error('Invalid commission');
     }

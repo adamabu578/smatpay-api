@@ -4,8 +4,8 @@ exports.DEFAULT_LOCALE = 'en-US';
 exports.BIZ_KLUB_KEY = btoa(`${process.env.BIZ_KLUB_API_KEY}|${process.env.BIZ_KLUB_PIN}`);
 
 exports.COMMISSION_TYPE = {
-    BASE: '0',
-    PERCENTAGE: '1',
+    BASE: 0,
+    PERCENTAGE: 1,
 };
 
 exports.TRANSACTION_STATUS = {
@@ -27,11 +27,6 @@ exports.VENDORS = {
 
 exports.ROLES = {
     admin: 'admin',
-};
-
-exports.EXAM_PIN_TYPES = {
-    'waec-registration': 'waec-registration',
-    'waec-checker': 'waec',
 };
 
 exports.MENU_STEPS = {
