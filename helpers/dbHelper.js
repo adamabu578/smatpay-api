@@ -30,12 +30,12 @@ exports.afterTransaction = (transactionId, json, vendor) => {
             obj.statusDesc = json?.response_description;
             if (json?.cards) {
                 obj.respObj = {
-                    pins: json?.cards
+                    pins: json?.cards.map(i => ({ pin: i.Pin, serial: i.Serial }))
                 };
             }
             if (json?.tokens) {
                 obj.respObj = {
-                    tokens: json?.tokens
+                    pins: json?.tokens.map(i => ({ pin: i }))
                 };
             }
             respCode = obj.status == TRANSACTION_STATUS.DELIVERED ? 200 : 201;

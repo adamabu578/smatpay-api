@@ -43,6 +43,9 @@ const menuActions = {
     const json = await resp.json();
     return json?.msg;
   },
+  subMenu: async (msg, q) => {
+    await botProcess(msg, q, q.options.service);
+  },
   airtime: async (msg, q) => {
     const resp = await fetch(`${process.env.BASE_URL}/airtime/vtu`, {
       method: 'POST',
@@ -120,9 +123,6 @@ const menuActions = {
     });
     const json = await resp.json();
     return json?.msg;
-  },
-  subMenu: async (msg, q) => {
-    await botProcess(msg, q, q.options.service);
   },
   verifySmartcardNo: async (msg, q) => {
     try {
@@ -213,6 +213,49 @@ const menuActions = {
       if (resp.status == 200) return; //Successful, the file would be sent
       const json = await resp.json();
       return json?.msg;
+    } catch (error) {
+      return 'An error occured';
+    }
+  },
+  listExamPinVariations: async (msg, q) => {
+    try {
+      const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker' };
+      const resp = await fetch(`${process.env.BASE_URL}/epin/exam?type=${serviceTypeMap[q.options.service]}`, {
+        headers: { 'Authorization': `Bearer ${msg.from.key}` },
+      });
+      const json = await resp.json();
+      const variations = json.data.variations;
+      await Session.updateOne({ _id: q._id }, { data: { ...q.data, variations } });
+      const str = `${variations[0].name}\nPrice: N${variations[0].variation_amount}\n\n\nEnter quantity`;
+      return str;
+    } catch (error) {
+      return 'An error occured';
+    }
+  },
+  buyExamPIN: async (msg, q) => {
+    try {      
+      if (!isNaN(q.options.quantity)) {
+        const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker' };
+        const resp = await fetch(`${process.env.BASE_URL}/epin/exam`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
+          body: JSON.stringify({ serviceCode: serviceTypeMap[q.options.service], variationCode: q?.data?.variations[0].variation_code, quantity: q.options.quantity }),
+        });
+        const json = await resp.json();
+        let str = json?.description ?? json.msg; //If an error occured and no description field
+        if (json.status == 'success') {
+          for (let i = 0; i < json.pins.length; i++) {
+            str += `\n\nPIN: ${json.pins[i].pin}`;
+            if(json.pins[i]?.serial) {
+              str += `\nSerial: ${json.pins[i].serial}`;
+            }
+          }
+        }
+        console.log(str);
+        return str;
+      } else {
+        return 'Invalid quantity';
+      }
     } catch (error) {
       return 'An error occured';
     }
@@ -455,11 +498,11 @@ const menus = [
   },
   {
     key: '_waecRegPin',
-    steps: [{ isEnd: true }],
+    steps: [{ action: 'listExamPinVariations', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
   },
   {
     key: '_waecCheckPin',
-    steps: [{ isEnd: true }],
+    steps: [{ action: 'listExamPinVariations', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
   },
   {
     key: '_balThreshold',
@@ -554,14 +597,20 @@ const botProcess = async (msg, q, serviceKey) => {
     await Session.updateOne({ _id: q._id }, { options: { ...q.options, ...update }, isClosed });
   }
 
+  const replyOption = menu?.replyOption ?? {};
+  // const keyboard = Markup.inlineKeyboard([
+  //   [
+  //     Markup.button.callback('⚡ Status', 'status'),
+  //     Markup.button.callback('🙄 Help', 'help'),
+  //   ],
+  // ]);
   if (menu?.msg) {
-    const replyOption = menu?.replyOption ?? {};
     bot.sendMessage(msg.chat.id, menu.msg, replyOption);
   } else if (menu?.action) {
     const q2 = await Session.findOne({ _id: q._id });
     const resp = await menuActions[menu?.action](msg, q2);
     if (resp)
-      bot.sendMessage(msg.chat.id, resp);
+      bot.sendMessage(msg.chat.id, resp, { parse_mode: 'Markdown' });
   }
 }
 

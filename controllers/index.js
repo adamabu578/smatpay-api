@@ -587,6 +587,7 @@ const getVariations = async (vendorCode, next) => {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   const json = await resp.json();
+  console.log('getVariations', json);
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
   return json;
 }
@@ -611,8 +612,8 @@ exports.getExamPIN = catchAsync(async (req, res, next) => {
 });
 
 const getVariationAmtFromVTPassJsonResp = (json, variationCode) => {
-  const varation = (json?.content?.variations ?? json?.content?.varations)?.filter(i => i?.variation_code == variationCode)[0];
-  return varation?.variation_amount;
+  const variation = (json?.content?.variations ?? json?.content?.varations)?.filter(i => i?.variation_code == variationCode)[0];
+  return variation?.variation_amount;
 }
 
 exports.buyExamPIN = catchAsync(async (req, res, next) => {
@@ -627,7 +628,7 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   const json = await getVariations(service?.vendorCode, next);
   const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
   if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
-  const amount = calcServicePrice(service, { vendorPrice: varationAmount });
+  const amount = calcServicePrice(service, { vendorPrice: varationAmount }); 
 
   if (!req.body?.[P.recipient]) {
     const q = await User.findOne({ role: ROLES.admin }, { uid: 1 });
