@@ -10,7 +10,7 @@ exports.updateTransaction = async (json) => {
         if (json?.statusDesc)
             obj.statusDesc = json.statusDesc;
         if (json?.refundStatus)
-            obj.refundStatus = json.refundStatu;
+            obj.refundStatus = json.refundStatus;
         if (json?.respObj)
             obj.respObj = json.respObj;
         if (json?.rawResp)
