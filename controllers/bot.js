@@ -262,7 +262,7 @@ const menuActions = {
   },
 };
 
-const onboardOps = { 1: { n: 'Link an existing account', k: '_linkAccount' }, 2: { n: 'Create a new account', k: '_createAccount' } };
+const onboardOps = { 1: { n: 'Already registered (on the mobile or web)? Link account', k: '_linkAccount' }, 2: { n: 'Create a new account', k: '_createAccount' } };
 const networks = ['MTN', 'Airtel', 'Glo', '9mobile'];
 const smeOps = ['Glo', '9mobile'];
 const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
