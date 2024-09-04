@@ -1,6 +1,7 @@
 const Transaction = require("../models/transaction");
 const { REFUND_STATUS, TRANSACTION_STATUS, VENDORS } = require("./consts");
 const { vEvent, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
+const { removeAllWhiteSpace } = require("./utils");
 
 exports.updateTransaction = async (json) => {
     try {
@@ -28,14 +29,25 @@ exports.afterTransaction = (transactionId, json, vendor) => {
         if (json.code == '000') {
             obj.status = json.content.transactions.status;
             obj.statusDesc = json?.response_description;
-            if (json?.cards) {
+            if (json?.cards) { //waec result checker
                 obj.respObj = {
                     pins: json?.cards.map(i => ({ pin: i.Pin, serial: i.Serial }))
                 };
             }
-            if (json?.tokens) {
+            if (json?.tokens) { //waec registration
                 obj.respObj = {
                     pins: json?.tokens.map(i => ({ pin: i }))
+                };
+            }
+            if (json?.token) { //electricity
+                obj.respObj = {
+                    token: removeAllWhiteSpace(json?.token.split(':')[1])
+                };
+            }
+            if (json?.purchased_code) { //still electricity. this is just to hold the full value
+                obj.respObj = {
+                    ...obj?.respObj,
+                    purchased_code: json?.purchased_code
                 };
             }
             respCode = obj.status == TRANSACTION_STATUS.DELIVERED ? 200 : 201;

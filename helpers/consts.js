@@ -86,10 +86,13 @@ exports.COMMISSION = {
     'pin-airtel-100': 0.0,
     'pin-airtel-200': 0.0,
     'pin-airtel-500': 0.0,
+    'pin-airtel-1000': 0.0,
     'pin-glo-100': 0.0,
     'pin-glo-200': 0.0,
     'pin-glo-500': 0.0,
+    'pin-glo-1000': 0.0,
     'pin-9mobile-100': 0.0,
     'pin-9mobile-200': 0.0,
     'pin-9mobile-500': 0.0,
+    'pin-9mobile-1000': 0.0,
 };

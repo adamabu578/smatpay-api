@@ -628,7 +628,7 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   const json = await getVariations(service?.vendorCode, next);
   const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
   if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
-  const amount = calcServicePrice(service, { vendorPrice: varationAmount }); 
+  const amount = calcServicePrice(service, { vendorPrice: varationAmount });
 
   if (!req.body?.[P.recipient]) {
     const q = await User.findOne({ role: ROLES.admin }, { uid: 1 });
@@ -798,4 +798,69 @@ exports.callback = catchAsync(async (req, res, next) => {
 exports.ePinsCallback = catchAsync(async (req, res, next) => {
   res.sendStatus(200);
   console.log('ePinsCallback', ':::', req.body);
+});
+
+exports.verifyMeterNo = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.recipient, P.type]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  // const resp = await fetch(`${process.env.VTPASS_TEST_API}/merchant-verify`, {
+  const resp = await fetch(`${process.env.VTPASS_API}/merchant-verify`, {
+    method: 'POST',
+    // headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_TEST_API_KEY, 'secret-key': process.env.VTPASS_TEST_SECRET_KEY },
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    body: JSON.stringify({ serviceID: req.body[P.provider], billersCode: req.body[P.recipient], type: req.body[P.type] }),
+  });
+  const json = await resp.json();
+  if (json?.code != '000') return next(new AppError(500, 'Cannot verify smartcard number.'));
+  if (json?.content?.error) return next(new AppError(400, json?.content?.error));
+
+  res.status(200).json({ status: 'success', msg: 'Smartcard details', data: json?.content });
+});
+
+exports.purchaseElectricity = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.recipient, P.type, P.amount, P.phone]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const service = await Service.findOne({ code: req.body[P.provider] });
+  console.log('service', service);
+  if (!service) return next(new AppError(500, 'Invalid provider'));
+
+  // const json = await getVariations(service?.vendorCode, next);
+  // const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
+  // if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
+  // const amount = calcServicePrice(service, { vendorPrice: varationAmount });
+
+  // if (!req.body?.[P.recipient]) {
+  //   const q = await User.findOne({ role: ROLES.admin }, { uid: 1 });
+  //   req.body[P.recipient] = q.uid.phone;
+  // }
+
+  // req.body[P.amount] = amount;
+  // req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
+
+  initTransaction2(req, service, next, async (transactionId, option) => {
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify({
+        request_id: transactionId,
+        // serviceID: service.vendorCode,
+        serviceID: req.body[P.provider],
+        billersCode: req.body[P.recipient],
+        variation_code: req.body[P.type],
+        amount: req.body[P.amount],
+        phone: req.body[P.phone]
+      }),
+    });
+    const json = await resp.json();
+    console.log('JSON :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    updateTransaction(obj);
+    let jsonResp = { status, msg };
+    if (obj?.respObj) {
+      jsonResp.token = obj.respObj.token;
+    }
+    res.status(respCode).json(jsonResp);
+  });
 });

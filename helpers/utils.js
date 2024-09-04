@@ -33,6 +33,10 @@ exports.calcServicePrice = (service, { vendorPrice, customer }) => {
     return BigNumber.sum(BigNumber.sum(service?.unitPrice ?? 0, vendorPrice ?? 0), service?.unitCharge ?? 0);
 }
 
+exports.removeAllWhiteSpace = (str) => {
+    return str.replace(/ /g,'');
+}
+
 exports.calcTotal = (unitPrice, qty, unitCommission, commissionType) => {
     const formatter = new Intl.NumberFormat(DEFAULT_LOCALE, { useGrouping: false, roundingMode: 'floor', maximumFractionDigits: 2 });
     let unitAmt, unitComm;
