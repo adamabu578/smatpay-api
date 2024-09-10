@@ -425,7 +425,7 @@ const menus = [
   {
     key: 'e-Pin',
     command: 'epin',
-    description: 'Generate recharge card pins',
+    description: 'Airtime, WAEC, UTME pins',
     steps: [{ msg: epinsOpsMsg(), key: 'service', value: (opt) => epinsOpsK(opt) }, { action: 'subMenu' }],
   },
   {
