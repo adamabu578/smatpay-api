@@ -31,7 +31,6 @@ router.get('/epin/exam', auth, base.getExamPIN);
 router.post('/epin/exam', auth, base.buyExamPIN);
 
 router.get('/transactions', auth, base.listTransactions);
-router.get('/transactions/merge', auth, base.mergeTransaction);
 
 router.post('/callback', base.callback); //vtpass
 router.post('/webhook/epins', base.ePinsCallback);

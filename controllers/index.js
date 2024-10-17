@@ -719,6 +719,7 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
   });
   const q = await Transaction.aggregate(arr);
   const q2 = q.length > 0 ? await Service.find() : [];
+  console.log(`:::Q2:::${q2}`);
   const services = {};
 
   const json = { status: 'success', msg: 'Transactions listed' };
@@ -732,7 +733,7 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
       const pins = q[i].respObj?.pins, provider = services[q[i].service], denomination = q[i].unitPrice;
       for (let j = 0; j < pins?.length; j++) {
         pinArr.push({ ...pins[j], provider, denomination });
-        labelObj[`${provider} N${denomination}`] = (labelObj?.[`${provider} N${denomination}`] ?? 0) + 1;
+        labelObj[`${provider} N${denomination}`] = (labelObj?.[`${provider} N${denomination}`] ?? 0) + 1; //name on the pdf file
       }
     }
 
