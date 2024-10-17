@@ -233,7 +233,7 @@ const menuActions = {
     }
   },
   buyExamPIN: async (msg, q) => {
-    try {      
+    try {
       if (!isNaN(q.options.quantity)) {
         const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker' };
         const resp = await fetch(`${process.env.BASE_URL}/epin/exam`, {
@@ -246,7 +246,7 @@ const menuActions = {
         if (json.status == 'success') {
           for (let i = 0; i < json.pins.length; i++) {
             str += `\n\nPIN: ${json.pins[i].pin}`;
-            if(json.pins[i]?.serial) {
+            if (json.pins[i]?.serial) {
               str += `\nSerial: ${json.pins[i].serial}`;
             }
           }
@@ -260,6 +260,36 @@ const menuActions = {
       return 'An error occured';
     }
   },
+  electVerifyMeterNo: async (msg, q) => {
+    try {
+      const resp = await fetch(`${process.env.BASE_URL}/tv/card/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
+        body: JSON.stringify({ provider: q?.options?.provider.toLowerCase(), cardNumber: q?.options?.cardNo }),
+      });
+      const json = await resp.json();
+      if (json?.data) {
+        await Session.updateOne({ _id: q._id }, { data: { ...q.data, cardInfo: json.data } });
+        let str = '';
+        str += `Customer Name: ${json.data.Customer_Name}`;
+        str += `\nStatus: ${json.data.Status}`;
+        str += `\nDue Date: ${json.data.Due_Date}`;
+        str += `\nCustomer Number: ${json.data.Customer_Number}`;
+        str += `\nCurrent Bouquet: ${json.data.Current_Bouquet}`;
+        str += `\nRenewal Amount: ${json.data.Renewal_Amount}`;
+
+        str += `\n\n\nSelect option`;
+        str += `\n1. Renew current plan`;
+        str += `\n2. Select new plan`;
+        return str;
+      } else {
+        return json?.msg;
+      }
+    } catch (error) {
+      console.log('error :::', error);
+      return 'An error occured';
+    }
+  },
 };
 
 const onboardOps = { 1: { n: 'Already registered (on the mobile or web)? Link account', k: '_linkAccount' }, 2: { n: 'Create a new account', k: '_createAccount' } };
@@ -267,6 +297,7 @@ const networks = ['MTN', 'Airtel', 'Glo', '9mobile'];
 const smeOps = ['Glo', '9mobile'];
 const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
 const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' } };
+const electOps = { 1: { n: 'Prepaid', k: '_prepaidElect' }, 2: { n: 'Postpaid', k: '_postpaidElect' } };
 const balOps = {
   1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (auto)', k: '_topupBalAuto' }
   // , 3: { n: 'Request Topup (manual)', k: '_topupBalManual' }, 4: { n: 'I have made a transfer', k: '_confirmTransfer' } 
@@ -335,6 +366,25 @@ const epinsOpsK = (opt) => {
   for (let key in epinsOps) {
     if (key == parseInt(opt)) {
       k = epinsOps[key].k;
+      break
+    };
+  }
+  return k;
+}
+
+const electOpsMsg = () => {
+  let str = 'Select option';
+  Object.entries(electOps).forEach(([k, v]) => {
+    str += `\n${k}. ${v.n}`;
+  });
+  return str;
+}
+const electOpsK = (opt) => {
+  if (isNaN(opt)) MENU_OPTION.invalid;;
+  let k;
+  for (let key in electOps) {
+    if (key == parseInt(opt)) {
+      k = electOps[key].k;
       break
     };
   }
@@ -432,7 +482,7 @@ const menus = [
     key: 'electricity',
     command: 'electricity',
     description: 'Prepaid or post paid electricity',
-    steps: [{ msg: networkMsg(), key: 'provider', value: (index) => networks[parseInt(index) - 1] }, { msg: 'Select bundle', key: 'bundle', value: (amount) => amount }, { msg: 'Enter recipient', key: 'recipient', value: (reci) => reci }],
+    steps: [{ msg: electOpsMsg(), key: 'service', value: (opt) => electOpsK(opt) }, { action: 'subMenu' }],
   },
   {
     key: 'TV Subscription',
@@ -503,6 +553,14 @@ const menus = [
   {
     key: '_waecCheckPin',
     steps: [{ action: 'listExamPinVariations', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
+  },
+  {
+    key: '_prepaidElect',
+    steps: [{ msg: 'Enter Meter Number', key: 'meterNo', value: (input) => input }, { msg: 'Enter Phone Number', key: 'phoneNo', value: (input) => input }, { msg: 'Enter Email Address (optional)\n\nSelect option to skip\n1. Skip', key: 'email', value: (input) => input }, { msg: 'Enter Referral Code (optional)\n\nSelect option to skip\n1. Skip', key: 'refCode', value: (input) => input }, { action: 'electVerifyMeterNo', key: 'details', value: (opt) => opt }, { action: 'electBuyPrepaid', isEnd: true }],
+  },
+  {
+    key: '_postpaidElect',
+    steps: [{ msg: 'Enter Account Number', key: 'accountNo', value: (input) => input }, { msg: 'Enter Phone Number', key: 'phoneNo', value: (input) => input }, { action: 'postpaidElect', isEnd: true }],
   },
   {
     key: '_balThreshold',
