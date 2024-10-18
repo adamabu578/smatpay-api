@@ -496,12 +496,13 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
 
   const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations 
 
-  const q = await Service.findOne({ code: 'epin' }, { _id: 1 });
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+
+  const q = await Service.findOne({ code: `${req.body[P.provider]}-epin` }, { _id: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   req.body[P.serviceId] = q._id;
   req.body[P.recipient] = 'N/A';
-  req.body[P.provider] = req.body[P.provider].toLowerCase();
   req.body[P.amount] = req.body[P.denomination];
   req.body[P.commissionType] = COMMISSION_TYPE.PRICE;
   req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
@@ -719,13 +720,12 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
   });
   const q = await Transaction.aggregate(arr);
   const q2 = q.length > 0 ? await Service.find() : [];
-  console.log(`:::Q2:::${q2}`);
   const services = {};
 
   const json = { status: 'success', msg: 'Transactions listed' };
   if (field && field == 'pin') {
     for (let i = 0; i < q2.length; i++) {
-      services[q2[i]._id] = q2[i].provider;
+      services[q2[i]._id] = q2[i]?.provider;
     }
 
     const pinArr = [], labelObj = {};
