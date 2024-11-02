@@ -5,7 +5,6 @@ const fetch = require('node-fetch');
 const randtoken = require('rand-token');
 const { uid } = require("uid");
 const { default: BigNumber } = require('bignumber.js');
-const puppeteer = require('puppeteer');
 
 const catchAsync = require("../helpers/catchAsync");
 const Service = require("../models/service");
@@ -14,7 +13,7 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, genRefNo, calcTotal, calcServicePrice } = require("../helpers/utils");
+const { pExCheck, genRefNo, calcTotal, calcServicePrice, createPDF, genHTMLTemplate } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
 const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES } = require("../helpers/consts");
 const { sendTelegramDoc, bot } = require("./bot");
@@ -129,7 +128,11 @@ const initTransaction = async (req, onError, onSuccess) => {
     if (q4?.modifiedCount != 1) return onError(new AppError(500, 'Account error'));
 
     const transactionId = genRefNo();
-    await Transaction.create({ userId: req.user.id, transactionId, serviceId: req.body[P.serviceId], recipient: req.body[P.recipient], unitPrice: amount, quantity: qty, commission, amount, totalAmount, balanceBefore: balance, balanceAfter, tags: req.body?.tags });
+    const fields = { userId: req.user.id, transactionId, serviceId: req.body[P.serviceId], recipient: req.body[P.recipient], unitPrice: amount, quantity: qty, commission, amount, totalAmount, balanceBefore: balance, balanceAfter, tags: req.body?.tags };
+    if (req.body[P.serviceVariation]) {
+      fields[P.serviceVariation] = req.body[P.serviceVariation];
+    }
+    await Transaction.create(fields);
     onSuccess(transactionId, { id: q2._id, telegramId: q2.uid.telegramId });
   } catch (error) {
     console.log(error);
@@ -416,78 +419,6 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
   });
 });
 
-const createPDF = async (uid, nameOnCard, pinsArr) => {
-  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
-  const page = await browser.newPage();
-  let html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <style>
-        body {
-            margin: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        p,
-        span {
-            margin: 0;
-            font-size: 12px;
-        }
-
-        #row {
-            display: flex;
-            flex-wrap: wrap;
-        }
-
-        .card {
-            /* width: 25%; */
-            width: 220px;
-            border-bottom: 0.5px dashed black;
-            border-right: 0.5px dashed black;
-            padding: 10px;
-        }
-
-        .top {
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .info {
-            font-size: 10px;
-            font-weight: 200;
-        }
-
-        span.bold {
-            font-weight: 800;
-        }
-    </style>
-</head>
-<body>
-    <div id="row">`;
-  for (let i = 0; i < pinsArr.length; i++) {
-    html += `<div class="card">
-            <div class="top">
-                <span>${nameOnCard}</span>
-                <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
-            </div>
-            <p>PIN <span class="bold">${pinsArr[i].pin}</span></p>
-            <p style="font-size:12px;">S/N ${pinsArr[i].sn}</p>
-            <p class="info">Dial *311*PIN#</p>
-        </div>`;
-  }
-  html += `</div>
-</body>
-</html>`;
-  await page.setContent(html);
-  const path = `docs/${uid}.pdf`;
-  await page.pdf({ path, format: 'A4' });
-  await browser.close();
-  return path;
-}
-
 exports.genAirtimePin = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.denomination, P.quantity, P.nameOnCard]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
@@ -498,7 +429,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
 
   req.body[P.provider] = req.body[P.provider].toLowerCase();
 
-  const q = await Service.findOne({ code: `${req.body[P.provider]}-epin` }, { _id: 1 });
+  const q = await Service.findOne({ code: `${req.body[P.provider]}-epin` }, { _id: 1, templates: 1 });
   if (!q) return next(new AppError(500, 'Service error'));
 
   req.body[P.serviceId] = q._id;
@@ -506,6 +437,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
   req.body[P.amount] = req.body[P.denomination];
   req.body[P.commissionType] = COMMISSION_TYPE.PRICE;
   req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
+  req.body[P.serviceVariation] = req.body[P.denomination];
 
   const networkCode = BIZ_KLUB_NETWORK_CODES[req.body[P.provider]];
 
@@ -553,7 +485,8 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
     updateTransaction(obj);
     if (obj?.respObj) {
       const pinArr = obj.respObj.pins.map(i => ({ ...i, provider: req.body[P.provider].toUpperCase(), denomination: req.body[P.denomination] }));
-      const path = await createPDF(option.id, req.body[P.nameOnCard], pinArr);
+      const template = q.templates?.[req.body[P.denomination]];
+      const path = await createPDF(option.id, genHTMLTemplate(template, req.body[P.nameOnCard], pinArr));
       const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} [${req.body[P.quantity]}].pdf`;
       sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
     }
@@ -672,10 +605,10 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
 });
 
 exports.listTransactions = catchAsync(async (req, res, next) => {
-  const { transactionId, recipient, status, tags, field, nameOnCard, format } = req.query;
+  const { id, recipient, status, tags, field, nameOnCard, format } = req.query;
   const filter = {};
-  if (transactionId) {
-    filter.transactionId = { $in: transactionId.split(',').filter(i => i != '') };
+  if (id) {
+    filter.transactionId = { $in: id.split(',').filter(i => i != '') };
   }
   if (recipient) {
     filter.recipient = { $in: recipient.split(',').filter(i => i != '') };
@@ -694,32 +627,37 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
       $limit: 50
     }
   ];
-  arr.push({
-    $project: field && field == 'pin'
-      ? {
-        service: '$serviceId',
-        unitPrice: 1,
-        quantity: 1,
-        respObj: 1,
-      }
-      : {
-        service: '$serviceId',
-        recipient: 1,
-        unitPrice: 1,
-        quantity: 1,
-        discount: 1,
-        totalAmount: 1,
-        status: 1,
-        tags: 1,
-        createdAt: 1,
-        statusDescription: '$statusDesc'
-      }
-  });
+  if (field && field == 'pin') {
+    arr.push({ $project: { service: '$serviceId', serviceVariation: 1, unitPrice: 1, quantity: 1, respObj: 1 } });
+  } else {
+    arr.push({ $project: { service: '$serviceId', serviceVariation: 1, recipient: 1, unitPrice: 1, quantity: 1, discount: 1, totalAmount: 1, status: 1, tags: 1, createdAt: 1, statusDescription: '$statusDesc' } });
+  }
   arr.push({
     $project: { _id: 0 }
   });
   const q = await Transaction.aggregate(arr);
-  const q2 = q.length > 0 ? await Service.find() : [];
+
+  const serviceIDs = new Set(); //values should be strings, or a mixture of numbers and strings
+  for (let i = 0; i < q.length; i++) {
+    serviceIDs.add(q[i].service.toHexString());
+  }
+
+  const q2 = q.length > 0 ? await Service.find({ _id: { $in: Array.from(serviceIDs) } }) : [];
+
+  const template = new Set();
+  if (format == 'pdf') { //check if all the transaction has the same print template
+    const templates = {} //to hold the list of all the templates in all the service list
+    for (let i = 0; i < q2.length; i++) {
+      templates[q2[i]._id] = q2[i]?.templates;
+    }
+    for (let i = 0; i < q.length; i++) {
+      if (templates?.[q[i].service]) {
+        template.add(templates[q[i].service][q[i]?.serviceVariation]);
+      }
+    }
+    if (template.size != 1) return next(new AppError(400, 'Some transactions can\'t be combined'));
+  }
+
   const services = {};
 
   const json = { status: 'success', msg: 'Transactions listed' };
@@ -739,7 +677,7 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
 
     const user = await User.findOne({ _id: req.user.id }, { uid: 1 });
 
-    const path = await createPDF(user._id, nameOnCard, pinArr);
+    const path = await createPDF(user._id, genHTMLTemplate(template.values().next().value, nameOnCard, pinArr));
     let fileName = '';
     for (const key in labelObj) {
       fileName += key + `[${labelObj[key]}] `;

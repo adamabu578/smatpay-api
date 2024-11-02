@@ -37,6 +37,20 @@ const serviceSchema = new mongoose.Schema({
         required: true,
         default: COMMISSION_TYPE.PERCENTAGE
     },
+    templates: {
+        type: {},
+    },
+    // variationsObj: {
+    //     type: {
+    //         variation: {
+    //             type: {
+    //                 printTemplate: {
+    //                     type: String,
+    //                 },
+    //             }
+    //         },
+    //     },
+    // },
 });
 
 const Service = mongoose.model('services', serviceSchema);

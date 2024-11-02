@@ -14,6 +14,9 @@ const transactionSchema = new mongoose.Schema({
         type: mongoose.Types.ObjectId,
         required: true,
     },
+    serviceVariation: {
+        type: String,
+    },
     recipient: {
         type: String,
         required: true,

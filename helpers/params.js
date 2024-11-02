@@ -14,6 +14,7 @@ module.exports = {
     variationCode: 'variationCode',
     cardNumber: 'cardNumber',
     serviceId: 'serviceId',
+    serviceVariation: 'serviceVariation',
     planId: 'planId',
     quantity: 'quantity',
     commissionType: 'commissionType',
