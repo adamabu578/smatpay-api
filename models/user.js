@@ -51,6 +51,9 @@ const userSchema = new mongoose.Schema({
     //         },
     //     },
     // },
+    referrer: {
+        type: mongoose.Types.ObjectId
+    },
     password: {
         type: String,
     },
