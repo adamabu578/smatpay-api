@@ -38,19 +38,19 @@ const transactionSchema = new mongoose.Schema({
     },
     amount: {
         type: Number,
-        required:true
+        required: true
     },
     totalAmount: {
         type: Number,
-        required:true
+        required: true
     },
     balanceBefore: {
         type: Number,
-        required:true
+        required: true
     },
     balanceAfter: {
         type: Number,
-        required:true
+        required: true
     },
     scheduleId: {
         type: mongoose.Types.ObjectId,
@@ -81,5 +81,9 @@ const transactionSchema = new mongoose.Schema({
 });
 
 const Transaction = mongoose.model('transactions', transactionSchema);
+
+// const transactionEventEmitter = Transaction.watch();
+
+// transactionEventEmitter.on('change', change => console.log('transactionEventEmitter', JSON.stringify(change)));
 
 module.exports = Transaction;

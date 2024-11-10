@@ -3,9 +3,14 @@ exports.DEFAULT_LOCALE = 'en-US';
 
 exports.BIZ_KLUB_KEY = btoa(`${process.env.BIZ_KLUB_API_KEY}|${process.env.BIZ_KLUB_PIN}`);
 
+// exports.COMMISSION_MODE = {  //should be removed later
+//     PRICE: 0,
+//     PERCENTAGE: 1,
+// };
+
 exports.COMMISSION_TYPE = {
-    PRICE: 0,
-    PERCENTAGE: 1,
+    AMOUNT: 'amount',
+    RATE: 'rate',
 };
 
 exports.TRANSACTION_STATUS = {

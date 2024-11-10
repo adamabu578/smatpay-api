@@ -4,7 +4,6 @@ const jwt = require("jsonwebtoken");
 const fetch = require('node-fetch');
 const randtoken = require('rand-token');
 const { uid } = require("uid");
-const { default: BigNumber } = require('bignumber.js');
 
 const catchAsync = require("../helpers/catchAsync");
 const Service = require("../models/service");
@@ -13,12 +12,11 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, genRefNo, calcTotal, calcServicePrice, createPDF, genHTMLTemplate } = require("../helpers/utils");
+const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction2, initTransaction, updateTransaction, afterTransaction } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, COMMISSION_TYPE, REFUND_STATUS, TRANSACTION_STATUS, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES } = require("../helpers/consts");
+const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES, COMMISSION_TYPE } = require("../helpers/consts");
 const { sendTelegramDoc, bot } = require("./bot");
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_LOW_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
-const { updateTransaction, afterTransaction } = require("../helpers/dbHelper");
+const { vEvent, VEVENT_ACCOUNT_CREATED } = require("../event/class");
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -99,110 +97,21 @@ exports.profile = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] });
 });
 
-const initTransaction = async (req, onError, onSuccess) => {
-  try {
-    const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.serviceId, P.commissionType, P.commissionKey]);
-    if (missing.length != 0) return onError(new AppError(400, 'Missing fields.', missing));
-
-    const q2 = await User.findOne({ _id: req.user.id }, { 'uid.telegramId': 1, balance: 1, commission: 1 });
-    const unitCommission = q2.commission[req.body[P.commissionKey]];
-
-    const qty = req.body?.[P.quantity] ?? 1;
-    const amount = req.body[P.amount];
-
-    const [totalAmount, commission] = calcTotal(amount, qty, unitCommission, req.body[P.commissionType]);
-    // console.log('totalAmount', totalAmount);
-
-    const balance = q2.balance;
-    // console.log('balance', balance);
-    const balanceAfter = BigNumber(balance).minus(totalAmount);
-    // console.log('balanceAfter', balanceAfter);
-    if (balanceAfter < 0) return onError(new AppError(402, 'Insufficient balance'));
-
-    if (req.body?.tags) {
-      const q3 = await Transaction.find({ userId: req.user.id, recipient: req.body[P.recipient], tags: req.body.tags });
-      if (q3.length != 0) return onError(new AppError(400, 'Duplicate transaction')); //transaction with tags for recipient already exist
-    }
-
-    const q4 = await User.updateOne({ _id: req.user.id }, { balance: balanceAfter });
-    if (q4?.modifiedCount != 1) return onError(new AppError(500, 'Account error'));
-
-    const transactionId = genRefNo();
-    const fields = { userId: req.user.id, transactionId, serviceId: req.body[P.serviceId], recipient: req.body[P.recipient], unitPrice: amount, quantity: qty, commission, amount, totalAmount, balanceBefore: balance, balanceAfter, tags: req.body?.tags };
-    if (req.body[P.serviceVariation]) {
-      fields[P.serviceVariation] = req.body[P.serviceVariation];
-    }
-    await Transaction.create(fields);
-    onSuccess(transactionId, { id: q2._id, telegramId: q2.uid.telegramId });
-  } catch (error) {
-    console.log(error);
-    return onError(new AppError(500, 'Transaction initiation error'));
-  }
-};
-
-const initTransaction2 = async (req, service, onError, onSuccess) => {
-  try {
-    const missing = pExCheck(req.body, [P.recipient, P.amount]);
-    if (missing.length != 0) return onError(new AppError(400, 'Missing fields.', missing));
-
-    const user = await User.findOne({ _id: req.user.id }, { 'uid.telegramId': 1, balance: 1, commission: 1 });
-    const unitCommission = user.commission?.[service.code] ?? 0;
-
-    const qty = req.body?.[P.quantity] ?? 1;
-    const amount = req.body[P.amount];
-
-    const [totalAmount, commission] = calcTotal(amount, qty, unitCommission, service.commissionMode);
-    // console.log('totalAmount', totalAmount);
-
-    const balance = user.balance;
-    // console.log('balance', balance);
-    const balanceAfter = BigNumber(balance).minus(totalAmount);
-    // console.log('balanceAfter', balanceAfter);
-    if (balanceAfter < 0) return onError(new AppError(402, 'Insufficient balance'));
-
-    if (req.body?.tags) {
-      const q3 = await Transaction.find({ userId: user._id, recipient: req.body[P.recipient], tags: req.body.tags });
-      if (q3.length != 0) return onError(new AppError(400, 'Duplicate transaction')); //transaction with tags for recipient already exist
-    }
-
-    const q4 = await User.updateOne({ _id: user._id }, { balance: balanceAfter });
-    if (q4?.modifiedCount != 1) return onError(new AppError(500, 'Account error'));
-
-    const transactionId = genRefNo();
-    await Transaction.create({
-      userId: user._id,
-      transactionId,
-      serviceId: service._id,
-      recipient: req.body[P.recipient],
-      unitPrice: amount,
-      quantity: qty,
-      commission,
-      amount,
-      totalAmount,
-      balanceBefore: balance,
-      balanceAfter,
-      tags: req.body?.tags
-    });
-    onSuccess(transactionId, { id: user._id, telegramId: user.uid.telegramId });
-  } catch (error) {
-    console.log(error);
-    return onError(new AppError(500, 'Transaction initiation error'));
-  }
-};
-
 const singleTopup = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ code: 'airtime' }, { _id: 1 });
-  if (!q) return next(new AppError(500, 'Service error'));
-
-  req.body[P.serviceId] = q._id;
   req.body[P.provider] = req.body[P.provider].toLowerCase();
-  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
-  req.body[P.commissionKey] = `vtu-${req.body[P.provider]}`;
 
-  initTransaction(req, next, async (transactionId) => {
+  // const q = await Service.findOne({ code: 'airtime' }, { _id: 1 });
+  const service = await Service.findOne({ code: `vtu-${req.body[P.provider]}` });
+  if (!service) return next(new AppError(500, 'Service error'));
+
+  // req.body[P.serviceId] = service._id;
+  // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
+  // req.body[P.commissionKey] = `vtu-${req.body[P.provider]}`;
+
+  initTransaction2(req, service, next, async (transactionId, options) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
@@ -217,7 +126,7 @@ const singleTopup = catchAsync(async (req, res, next) => {
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
     res.status(respCode).json({ status, msg });
-    updateTransaction(obj);
+    updateTransaction(obj, options);
   });
 });
 
@@ -251,7 +160,8 @@ const bulkTopup = catchAsync(async (req, res, next) => {
           }),
         });
         const json = await resp.json();
-        updateTransaction({ transactionId: ref, status: json.content.transactions.status, statusDesc: json?.response_description });
+        const obj = { transactionId: ref, status: json.content.transactions.status, statusDesc: json?.response_description };
+        updateTransaction(obj, req.user.id);
       }
     } catch (error) {
       console.log('topup', ':::', 'error', ':::', error);
@@ -292,7 +202,7 @@ exports.subData = catchAsync(async (req, res, next) => {
 
   req.body[P.serviceId] = q._id;
   req.body[P.provider] = req.body[P.provider].toLowerCase();
-  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
 
   initTransaction(req, next, async (transactionId) => {
@@ -311,7 +221,7 @@ exports.subData = catchAsync(async (req, res, next) => {
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
     res.status(respCode).json({ status, msg });
-    updateTransaction(obj);
+    updateTransaction(obj, req.user.id);
   });
 });
 
@@ -356,7 +266,7 @@ exports.tvSub = catchAsync(async (req, res, next) => {
 
   req.body[P.recipient] = req.body[P.cardNumber];
   req.body[P.serviceId] = q._id;
-  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   req.body[P.provider] = req.body[P.provider].toLowerCase();
   req.body[P.commissionKey] = `${req.body[P.provider]}`;
 
@@ -380,7 +290,7 @@ exports.tvSub = catchAsync(async (req, res, next) => {
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
     res.status(respCode).json({ status, msg });
-    updateTransaction(obj);
+    updateTransaction(obj, req.user.id);
   });
 });
 
@@ -393,7 +303,7 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
 
   req.body[P.recipient] = req.body[P.cardNumber];
   req.body[P.serviceId] = q._id;
-  req.body[P.commissionType] = COMMISSION_TYPE.PERCENTAGE;
+  req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   req.body[P.provider] = req.body[P.provider].toLowerCase();
   req.body[P.commissionKey] = `${req.body[P.provider]}`;
 
@@ -415,7 +325,7 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
     res.status(respCode).json({ status, msg });
-    updateTransaction(obj);
+    updateTransaction(obj, req.user.id);
   });
 });
 
@@ -435,7 +345,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
   req.body[P.serviceId] = q._id;
   req.body[P.recipient] = 'N/A';
   req.body[P.amount] = req.body[P.denomination];
-  req.body[P.commissionType] = COMMISSION_TYPE.PRICE;
+  req.body[P.commissionType] = COMMISSION_TYPE.AMOUNT;
   req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
   req.body[P.serviceVariation] = req.body[P.denomination];
 
@@ -458,7 +368,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.BIZKLUB);
-    updateTransaction(obj);
+    updateTransaction(obj, req.user.id);
 
     if (respCode != 200) return next(new AppError(respCode, msg));
 
@@ -482,7 +392,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
       })
     };
     res.status(respCode).json({ status, msg });
-    updateTransaction(obj);
+    updateTransaction(obj, req.user.id);
     if (obj?.respObj) {
       const pinArr = obj.respObj.pins.map(i => ({ ...i, provider: req.body[P.provider].toUpperCase(), denomination: req.body[P.denomination] }));
       const template = q.templates?.[req.body[P.denomination]];
@@ -507,7 +417,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
     // const json = await resp.json();
     // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
     // res.status(respCode).json({ status, msg });
-    // updateTransaction(obj);
+    // updateTransaction(obj, req.user.id);
     // if (obj.respObj) {
     //   const path = await createPDF(option.id, req.body[P.provider].toUpperCase(), req.body[P.denomination], req.body[P.nameOnCard], obj.respObj.pins);
     //   const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} (${req.body[P.quantity]}).pdf`;
@@ -521,7 +431,7 @@ const getVariations = async (vendorCode, next) => {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   const json = await resp.json();
-  console.log('getVariations', json);
+  // console.log('getVariations', json);
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
   return json;
 }
@@ -572,7 +482,7 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   req.body[P.amount] = amount;
   req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
-  initTransaction2(req, service, next, async (transactionId, option) => {
+  initTransaction2(req, service, next, async (transactionId, options) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
@@ -586,7 +496,7 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
     });
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    updateTransaction(obj);
+    updateTransaction(obj, options);
     let jsonResp = { status, msg };
     if (obj?.respObj) {
       let fileName = `${service.title} [${req.body[P.quantity]}]`;
@@ -705,8 +615,8 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
 });
 
 exports.balance = catchAsync(async (req, res, next) => {
-  const q = await User.findOne({ _id: req.user.id }, { balance: 1 });
-  res.status(200).json({ status: 'success', msg: 'Balance fetched', data: q?.balance });
+  const q = await User.findOne({ _id: req.user.id }, { balance: 1, referralBonus: 1 });
+  res.status(200).json({ status: 'success', msg: 'Balances fetched', data: { wallet: q?.balance, bonus: q?.referralBonus } });
 });
 
 exports.topupInit = catchAsync(async (req, res, next) => {
@@ -795,7 +705,7 @@ exports.purchaseElectricity = catchAsync(async (req, res, next) => {
     const json = await resp.json();
     console.log('JSON :::', json);
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    updateTransaction(obj);
+    updateTransaction(obj, req.user.id);
     let jsonResp = { status, msg };
     if (obj?.respObj) {
       jsonResp.token = obj.respObj.token;

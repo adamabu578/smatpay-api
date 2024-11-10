@@ -5,8 +5,12 @@ const fs = require("fs");
 const catchAsync = require("../helpers/catchAsync");
 const User = require("../models/user");
 const Session = require("../models/session");
-const { capFirstChar } = require('../helpers/utils');
 const { MENU_STEPS, MENU_OPTION } = require('../helpers/consts');
+const { nairaFormatter } = require('../helpers/utils');
+
+const capFirstChar = (str) => {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 bot.setWebHook(`${process.env.BASE_URL}/bot`);
@@ -113,7 +117,7 @@ const menuActions = {
       headers: { 'Authorization': `Bearer ${msg.from.key}` },
     });
     const json = await resp.json();
-    return `Your balance is N${json?.data}`;
+    return `Your balances are:\n\nWallet: ${nairaFormatter.format(json?.data.wallet)}\nBonus: ${nairaFormatter.format(json?.data.bonus)}`;
   },
   topupBalance: async (msg, q) => {
     const resp = await fetch(`${process.env.BASE_URL}/topup/init`, {

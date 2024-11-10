@@ -1,13 +1,12 @@
 const catchAsync = require("../helpers/catchAsync");
-const { VENDORS, ROLES, BIZ_KLUB_KEY } = require("../helpers/consts");
 const { default: BigNumber } = require('bignumber.js');
 
-const P = require('../helpers/params');
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE } = require("../classes/events");
 const User = require("../models/user");
-const { bot } = require("./bot");
 const fetch = require("node-fetch");
 const AppError = require("../helpers/AppError");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_CHECK_BALANCE, VEVENT_INSUFFICIENT_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_GIVE_BONUS_IF_APPLICABLE } = require("../event/class");
+const { bot } = require("./bot");
+const { nairaFormatter } = require("../helpers/utils");
 
 vEvent.on(VEVENT_ACCOUNT_CREATED, async (userID) => {
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });
@@ -17,8 +16,8 @@ vEvent.on(VEVENT_ACCOUNT_CREATED, async (userID) => {
 });
 
 vEvent.on(VEVENT_CHECK_BALANCE, async (vendor, balance) => {
-  if(isNaN(balance)) return;
-  if(balance > 20000) return;
+  if (isNaN(balance)) return;
+  if (balance > 20000) return;
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });
   if (q.length != 0) {
     bot.sendMessage(q[0].uid?.telegramId, `REPORT ::: Oops! Balance is running low on ${vendor}.`)
@@ -36,6 +35,13 @@ vEvent.on(VEVENT_TRANSACTION_ERROR, async (vendor, msg) => {
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });
   if (q.length != 0) {
     bot.sendMessage(q[0].uid?.telegramId, `REPORT ::: ${vendor} ::: ${msg}`)
+  }
+});
+
+vEvent.on(VEVENT_GIVE_BONUS_IF_APPLICABLE, async (referrer, bonus) => {
+  const q = await User.findByIdAndUpdate(referrer, { $inc: { referralBonus: bonus } }, { fields: { 'uid.telegramId': 1 } });
+  if (q?.uid) {
+    bot.sendMessage(q?.uid?.telegramId, `${nairaFormatter.format(bonus)} bonus received`);
   }
 });
 
