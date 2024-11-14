@@ -442,11 +442,13 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
 });
 
 const getVariations = async (vendorCode, next) => {
+  console.log('vendorCode', vendorCode);
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
+  console.log('resp.status', resp.status);
   const json = await resp.json();
-  // console.log('getVariations', json);
+  console.log('getVariations', json);
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
   return json;
 }

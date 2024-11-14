@@ -75,6 +75,7 @@ exports.calcCommission = (unitPrice, qty, defaultUnitCommission, userUnitCommiss
 };
 
 exports.calcBonus = (unitPrice, qty, defaultUnitBonus, userUnitBonus, commissionType) => {
+    // console.log(unitPrice, qty, defaultUnitBonus, userUnitBonus, commissionType);
     let unitBonus;
     if (isNaN(unitPrice) || isNaN(qty) || isNaN(defaultUnitBonus) || isNaN(userUnitBonus)) throw new Error('NaN error');
 
@@ -203,9 +204,10 @@ exports.updateTransaction = async (json, options) => {
         if (json?.rawResp)
             obj.rawResp = json?.rawResp;
         const resp = await Transaction.updateOne({ transactionId: json.transactionId }, obj);
+        // console.log(json, ':::', options, ':::', resp)
 
         //bonus
-        if (json?.status == TRANSACTION_STATUS.DELIVERED && resp?.modifiedCount > 0 && (options?.defaultUnitBonus ?? 0) > 0) {
+        if (options?.referrer && json?.status == TRANSACTION_STATUS.DELIVERED && resp?.modifiedCount > 0 && (options?.defaultUnitBonus ?? 0) > 0) {
             const userUnitBonus = 0;
             const bonus = this.calcBonus(options.unitPrice, options.qty, options.defaultUnitBonus, userUnitBonus, options.commissionType);
             vEvent.emit(VEVENT_GIVE_BONUS_IF_APPLICABLE, options.referrer, bonus); //emit new bonus event
