@@ -57,7 +57,7 @@ const serviceSchema = new mongoose.Schema({
     //     required: true,
     //     default: COMMISSION_MODE.PERCENTAGE
     // },
-    templates: {
+    templates: { //for service with different template for different variations
         type: {},
     },
     // variationsObj: {

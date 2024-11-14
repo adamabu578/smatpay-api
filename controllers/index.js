@@ -14,8 +14,8 @@ const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES, COMMISSION_TYPE } = require("../helpers/consts");
-const { sendTelegramDoc, bot } = require("./bot");
+const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES } = require("../helpers/consts");
+const { sendTelegramDoc } = require("./bot");
 const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
 
 exports.signUp = catchAsync(async (req, res, next) => {
