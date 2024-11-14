@@ -13,6 +13,7 @@ router.get('/logout', base.logout);
 
 router.get('/profile', auth, base.profile);
 router.get('/balance', auth, base.balance);
+router.get('/referral/link', auth, base.referralLink);
 router.post('/topup/init', auth, base.topupInit);
 
 router.post('/airtime/vtu', auth, base.airtime);

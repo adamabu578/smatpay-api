@@ -7,6 +7,9 @@ const sessionSchema = new mongoose.Schema({
     telegramId: {
         type: String,
     },
+    startParams: {
+        type: String,
+    },
     options: {
         type: {},
     },

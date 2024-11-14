@@ -38,11 +38,16 @@ exports.bot = bot;
 exports.sendTelegramDoc = sendTelegramDoc;
 
 const menuActions = {
-  createAccount: async (msg, q) => {
+  createAccount: async (msg, session) => {
+    const obj = { firstName: msg.from?.first_name, lastName: msg.from?.last_name ?? msg.from?.username, email: session.options.email, phone: session.options.phone, telegramId: msg.from.id };
+    const sessions = await Session.find({ $and: [{ telegramId: msg.from.id }, { startParams: { $ne: null } }] }); //look for all sessions with startParams incase the user was referred
+    if (sessions.length != 0) { //user was referred
+      obj.referralCode = sessions[0].startParams; //first occurence of the user session 
+    }
     const resp = await fetch(`${process.env.BASE_URL}/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstName: msg.from?.first_name, lastName: msg.from?.last_name ?? msg.from?.username, email: q.options.email, phone: q.options.phone, telegramId: msg.from.id }),
+      body: JSON.stringify(obj),
     });
     const json = await resp.json();
     return json?.msg;
@@ -294,6 +299,13 @@ const menuActions = {
       return 'An error occured';
     }
   },
+  getReferralLink: async (msg, session) => {
+    const resp = await fetch(`${process.env.BASE_URL}/referral/link`, {
+      headers: { 'Authorization': `Bearer ${msg.from.key}` },
+    });
+    const json = await resp.json();
+    return json?.data.link;
+  },
 };
 
 const onboardOps = { 1: { n: 'Already registered (on the mobile or web)? Link account', k: '_linkAccount' }, 2: { n: 'Create a new account', k: '_createAccount' } };
@@ -306,7 +318,7 @@ const balOps = {
   1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (auto)', k: '_topupBalAuto' }
   // , 3: { n: 'Request Topup (manual)', k: '_topupBalManual' }, 4: { n: 'I have made a transfer', k: '_confirmTransfer' } 
 };
-const acctOps = { 1: { n: 'Balance threshold', k: '_balThreshold' } };
+const acctOps = { 1: { n: 'Balance threshold', k: '_balThreshold' }, 2: { n: 'Referral link', k: '_referralLink' } };
 const epinDenominations = {
   1: 100, 2: 200, 3: 500
   //, 4: 1000 
@@ -569,6 +581,10 @@ const menus = [
   {
     key: '_balThreshold',
     steps: [{ action: 'checkBalance', isEnd: true }],
+  },
+  {
+    key: '_referralLink',
+    steps: [{ action: 'getReferralLink', isEnd: true }],
   }
 ];
 
@@ -610,11 +626,15 @@ const botProcess = async (msg, q, serviceKey) => {
   const input = msg.text;
   let menuIndex = 0;
   if (!q) {
-    const obj = { options: { service: serviceKey } };
-    if (msg.from._id) {
+    const obj = { options: { service: serviceKey } }; //menu option
+    if (msg.from._id) { //existing user
       obj.user = msg.from._id;
-    } else {
+    } else { //new user
       obj.telegramId = msg.from.id;
+      if (msg.text.startsWith('/start')) { //case when parameter is passed
+        const words = msg.text.split(' ');
+        obj.startParams = words[1];
+      }
     }
     q = await Session.create(obj);
   } else {
@@ -672,7 +692,7 @@ const botProcess = async (msg, q, serviceKey) => {
     const q2 = await Session.findOne({ _id: q._id });
     const resp = await menuActions[menu?.action](msg, q2);
     if (resp)
-      bot.sendMessage(msg.chat.id, resp, { parse_mode: 'Markdown' });
+      bot.sendMessage(msg.chat.id, resp, replyOption);
   }
 }
 
@@ -680,30 +700,33 @@ bot.on('message', async msg => {
   if (process.env.NODE_ENV == 'development' && msg.from.id != process.env.TELEGRAM_BOT_DEV_USER) {
     bot.sendMessage(msg.chat.id, `Sorry we have moved to ${process.env.TELEGRAM_BOT_LIVE_LINK}`);
   } else {
-    const q = await User.find({ 'uid.telegramId': msg.from.id });
+    const user = await User.find({ 'uid.telegramId': msg.from.id });
 
     const query = { isClosed: 0 };
 
-    if (q.length == 1) { //User already exist
-      msg.from._id = q[0]._id;
-      msg.from.key = q[0].liveKey;
-      query.user = q[0]._id;
+    if (user.length == 1) { //User already exist
+      msg.from._id = user[0]._id; //add user ID to the from object
+      msg.from.key = user[0].liveKey; //add user live key to the from object
+      query.user = user[0]._id; //also add user ID to the query object
     } else {
-      query.telegramId = msg.from.id;
+      query.telegramId = msg.from.id; //add user's telegramId to the query object. for first time user yet to be registered
     }
 
     let q2 = await Session.findOne(query);
 
-    if (q.length == 0 && !q2) {
+    if (user.length == 0 && !q2) {
+      console.log('Case 1');
       botProcess(msg, q2, MENU_STEPS._welcome);
     } else if (msg.text == '.' || msg.text == '/start') {
+      console.log('Case 2');
       if (q2) closeSession(q2._id);
-      if (q.length != 0) {
+      if (user.length != 0) {
         bot.sendMessage(msg.chat.id, page1());
       } else {
         botProcess(msg, null, MENU_STEPS._welcome);
       }
     } else if (!q2) {
+      console.log('Case 3');
       let serviceKey;
       if (isNaN(msg.text) && msg.text.startsWith('/')) { //A command is entered e.g /airtime
         serviceKey = menus.filter(i => i.command == msg.text.replace('/', ''))[0]?.key;
@@ -715,12 +738,13 @@ bot.on('message', async msg => {
         if (opt <= keys.length) //ensure user option is not out of range of the keys array
           serviceKey = keys[opt - 1];
       }
-      if (mainSteps?.[serviceKey]) {
+      if (mainSteps?.[serviceKey]) { //a service with the key exists in the main menu
         botProcess(msg, q2, serviceKey);
       } else {
         bot.sendMessage(msg.chat.id, page1());
       }
     } else if (q2) {
+      console.log('Case 4');
       let serviceKey;
       if (msg.text.startsWith('/')) { //change of command in the middle of an ongoing session, close the current session and proceed to the new request automatically
         serviceKey = menus.filter(i => i.command == msg.text.replace('/', ''))[0]?.key;

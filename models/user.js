@@ -51,6 +51,11 @@ const userSchema = new mongoose.Schema({
     //         },
     //     },
     // },
+    referralCode: {
+        type: String,
+        required: true,
+        unique: true,
+    },
     referrer: {
         type: mongoose.Types.ObjectId
     },

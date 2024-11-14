@@ -12,11 +12,11 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction2, initTransaction, updateTransaction, afterTransaction } = require("../helpers/utils");
+const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction2, updateTransaction, afterTransaction } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
 const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES, COMMISSION_TYPE } = require("../helpers/consts");
 const { sendTelegramDoc, bot } = require("./bot");
-const { vEvent, VEVENT_ACCOUNT_CREATED } = require("../event/class");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -42,10 +42,18 @@ exports.signUp = catchAsync(async (req, res, next) => {
   else if (q.length != 0 && q[0]?.uid?.phone == req.body[P.phone]) return next(new AppError(400, 'Account with phone already exists'));
   else if (q.length != 0 && isTelegram && q[0]?.uid?.telegramId == req.body[P.telegramId]) return next(new AppError(400, 'Account already linked to telegram'));
 
-  const fields = { uid: uidObj, name: { first: firstName, last: lastName }, testKey: 'tk' + uid(20), liveKey: 'lk' + uid(20) };
+  const referralCode = randtoken.generate(8, "ABCDEFGHIJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz2345678998765432197324349877765463456789");
+
+  const fields = { uid: uidObj, name: { first: firstName, last: lastName }, testKey: 'tk' + uid(20), liveKey: 'lk' + uid(20), referralCode };
 
   if (!isTelegram) { //registration not through telegram
     fields.password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+  }
+
+  let referrer;
+  if (req.body?.[P.referralCode]) { //get the referrer details
+    referrer = await User.findOne({ referralCode: req.body[P.referralCode] }, { _id: 1, 'uid.telegramId': 1 });
+    fields[P.referrer] = referrer._id;
   }
 
   const q2 = await User.create(fields);
@@ -53,6 +61,9 @@ exports.signUp = catchAsync(async (req, res, next) => {
 
   res.status(200).json({ status: "success", msg: "Account created." });
   vEvent.emit(VEVENT_ACCOUNT_CREATED, q2._id);
+  if (referrer) {
+    vEvent.emit(VEVENT_NEW_REFERRAL, referrer.uid.telegramId);
+  }
 });
 
 exports.login = catchAsync(async (req, res, next) => {
@@ -190,22 +201,23 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
   const json = await resp.json();
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list bundles.'));
 
-  res.status(200).json({ status: 'success', msg: 'Bundle listed', data: json?.content?.variations });
+  res.status(200).json({ status: 'success', msg: 'Bundle listed', data: json?.content?.variations ?? json?.content?.varations });
 });
 
 exports.subData = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.bundleCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ code: 'data' }, { _id: 1 });
-  if (!q) return next(new AppError(500, 'Service error'));
-
-  req.body[P.serviceId] = q._id;
   req.body[P.provider] = req.body[P.provider].toLowerCase();
-  req.body[P.commissionType] = COMMISSION_TYPE.RATE;
-  req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
 
-  initTransaction(req, next, async (transactionId) => {
+  const service = await Service.findOne({ code: `data-${req.body[P.provider]}` });
+  if (!service) return next(new AppError(500, 'Service error'));
+
+  // req.body[P.serviceId] = service._id;
+  // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
+  // req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
+
+  initTransaction2(req, service, next, async (transactionId) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
@@ -226,6 +238,7 @@ exports.subData = catchAsync(async (req, res, next) => {
 });
 
 exports.listTVPlans = catchAsync(async (req, res, next) => {
+  console.log('req.body', req.query);
   const missing = pExCheck(req.query, [P.provider]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
@@ -236,7 +249,7 @@ exports.listTVPlans = catchAsync(async (req, res, next) => {
   const json = await resp.json();
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list plans.'));
 
-  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.variations });
+  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.variations ?? json?.content?.varations });
 });
 
 exports.verifySmartCardNo = catchAsync(async (req, res, next) => {
@@ -261,16 +274,16 @@ exports.tvSub = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.planId, P.amount, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ code: 'cable-tv' }, { _id: 1 });
-  if (!q) return next(new AppError(500, 'Service error'));
+  const service = await Service.findOne({ code: 'cable-tv' });
+  if (!service) return next(new AppError(500, 'Service error'));
 
   req.body[P.recipient] = req.body[P.cardNumber];
-  req.body[P.serviceId] = q._id;
-  req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   req.body[P.provider] = req.body[P.provider].toLowerCase();
-  req.body[P.commissionKey] = `${req.body[P.provider]}`;
+  // req.body[P.serviceId] = service._id;
+  // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
+  // req.body[P.commissionKey] = `${req.body[P.provider]}`;
 
-  initTransaction(req, next, async (transactionId) => {
+  initTransaction2(req, service, next, async (transactionId) => {
     // const resp = await fetch(`${process.env.VTPASS_TEST_API}/pay`, {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
@@ -298,16 +311,16 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.amount, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ code: 'cable-tv' }, { _id: 1 });
-  if (!q) return next(new AppError(500, 'Service error'));
+  const service = await Service.findOne({ code: 'cable-tv' });
+  if (!service) return next(new AppError(500, 'Service error'));
 
   req.body[P.recipient] = req.body[P.cardNumber];
-  req.body[P.serviceId] = q._id;
-  req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   req.body[P.provider] = req.body[P.provider].toLowerCase();
-  req.body[P.commissionKey] = `${req.body[P.provider]}`;
+  // req.body[P.serviceId] = service._id;
+  // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
+  // req.body[P.commissionKey] = `${req.body[P.provider]}`;
 
-  initTransaction(req, next, async (transactionId) => {
+  initTransaction2(req, service, next, async (transactionId) => {
     // const resp = await fetch(`${process.env.VTPASS_TEST_API}/pay`, {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
@@ -335,23 +348,25 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
   if (isNaN(req.body[P.denomination])) return next(new AppError(400, `${P.denomination} must be a number`));
   if (isNaN(req.body[P.quantity])) return next(new AppError(400, `${P.quantity} must be a number`));
 
-  const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations 
+  // const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations 
 
   req.body[P.provider] = req.body[P.provider].toLowerCase();
 
-  const q = await Service.findOne({ code: `${req.body[P.provider]}-epin` }, { _id: 1, templates: 1 });
-  if (!q) return next(new AppError(500, 'Service error'));
+  const serviceCode = `epin-${req.body[P.provider]}-${req.body[P.denomination]}`;
 
-  req.body[P.serviceId] = q._id;
+  const service = await Service.findOne({ code: serviceCode }); // { _id: 1, templates: 1 }
+  if (!service) return next(new AppError(500, 'Invalid service code'));
+
+  // req.body[P.serviceId] = service._id;
   req.body[P.recipient] = 'N/A';
   req.body[P.amount] = req.body[P.denomination];
-  req.body[P.commissionType] = COMMISSION_TYPE.AMOUNT;
-  req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
+  // req.body[P.commissionType] = COMMISSION_TYPE.AMOUNT;
+  // req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
   req.body[P.serviceVariation] = req.body[P.denomination];
 
   const networkCode = BIZ_KLUB_NETWORK_CODES[req.body[P.provider]];
 
-  initTransaction(req, next, async (transactionId, option) => {
+  initTransaction2(req, service, next, async (transactionId, option) => {
     const resp = await fetch(process.env.BIZ_KLUB_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -395,7 +410,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
     updateTransaction(obj, req.user.id);
     if (obj?.respObj) {
       const pinArr = obj.respObj.pins.map(i => ({ ...i, provider: req.body[P.provider].toUpperCase(), denomination: req.body[P.denomination] }));
-      const template = q.templates?.[req.body[P.denomination]];
+      const template = service.templates?.[req.body[P.denomination]];
       const path = await createPDF(option.id, genHTMLTemplate(template, req.body[P.nameOnCard], pinArr));
       const fileName = `${req.body[P.provider].toUpperCase()} N${req.body[P.denomination]} [${req.body[P.quantity]}].pdf`;
       sendTelegramDoc(option.telegramId, path, { fileName, deleteOnSent: true });
@@ -617,6 +632,11 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
 exports.balance = catchAsync(async (req, res, next) => {
   const q = await User.findOne({ _id: req.user.id }, { balance: 1, referralBonus: 1 });
   res.status(200).json({ status: 'success', msg: 'Balances fetched', data: { wallet: q?.balance, bonus: q?.referralBonus } });
+});
+
+exports.referralLink = catchAsync(async (req, res, next) => {
+  const q = await User.findOne({ _id: req.user.id }, { referralCode: 1 });
+  res.status(200).json({ status: 'success', msg: 'Balances fetched', data: { link: `${process.env.TELEGRAM_BOT_LINK}?start=${q?.referralCode}` } });
 });
 
 exports.topupInit = catchAsync(async (req, res, next) => {

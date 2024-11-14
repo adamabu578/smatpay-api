@@ -55,6 +55,7 @@ exports.removeAllWhiteSpace = (str) => {
 }
 
 exports.calcCommission = (unitPrice, qty, defaultUnitCommission, userUnitCommission, commissionType) => {
+    // console.log(unitPrice, qty, defaultUnitCommission, userUnitCommission, commissionType);
     const formatter = new Intl.NumberFormat(DEFAULT_LOCALE, { useGrouping: false, roundingMode: 'floor', maximumFractionDigits: 2 });
     let unitAmt, unitComm;
     if (isNaN(unitPrice) || isNaN(qty) || isNaN(defaultUnitCommission) || isNaN(userUnitCommission)) throw new Error('NaN error');
@@ -70,7 +71,7 @@ exports.calcCommission = (unitPrice, qty, defaultUnitCommission, userUnitCommiss
     } else {
         throw new Error('Invalid commission');
     }
-    return [parseFloat(unitAmt * qty), unitComm * qty]; //[total amount, total commission]
+    return [unitAmt, BigNumber(unitAmt).multipliedBy(qty), BigNumber(unitComm).multipliedBy(qty)]; //[unit amount, total amount, total commission]
 };
 
 exports.calcBonus = (unitPrice, qty, defaultUnitBonus, userUnitBonus, commissionType) => {
@@ -140,9 +141,10 @@ exports.initTransaction2 = async (req, service, onError, onSuccess) => {
 
         const qty = req.body?.[P.quantity] ?? 1;
         const amount = req.body[P.amount];
+        // console.log('amount', amount);
 
         const commissionType = service.commissionType;
-        const [totalAmount, commission] = this.calcCommission(amount, qty, defaultUnitCommission, userUnitCommission, commissionType);
+        const [unitAmount, totalAmount, commission] = this.calcCommission(amount, qty, defaultUnitCommission, userUnitCommission, commissionType);
         // console.log('totalAmount', totalAmount);
 
         const balance = user.balance;
@@ -160,7 +162,7 @@ exports.initTransaction2 = async (req, service, onError, onSuccess) => {
         if (q4?.modifiedCount != 1) return onError(new AppError(500, 'Account error'));
 
         const transactionId = this.genRefNo();
-        await Transaction.create({
+        const fields = {
             userId: user._id,
             transactionId,
             serviceId: service._id,
@@ -168,17 +170,21 @@ exports.initTransaction2 = async (req, service, onError, onSuccess) => {
             unitPrice: amount,
             quantity: qty,
             commission,
-            amount,
+            amount: unitAmount,
             totalAmount,
             balanceBefore: balance,
             balanceAfter,
             tags: req.body?.tags
-        });
+        };
+        if (req.body[P.serviceVariation]) {
+            fields[P.serviceVariation] = req.body[P.serviceVariation];
+        }
+        await Transaction.create(fields);
         const defaultUnitBonus = service?.unitBonus ?? 0;
         const successOptions = { id: user._id, telegramId: user.uid.telegramId, referrer: user?.referrer, unitPrice: amount, qty, defaultUnitBonus, commissionType };
         onSuccess(transactionId, successOptions);
     } catch (error) {
-        console.log(error);
+        console.log('initTransaction ::: ERROR :::', error);
         return onError(new AppError(500, 'Transaction initiation error'));
     }
 };

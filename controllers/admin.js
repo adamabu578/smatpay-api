@@ -4,9 +4,14 @@ const { default: BigNumber } = require('bignumber.js');
 const User = require("../models/user");
 const fetch = require("node-fetch");
 const AppError = require("../helpers/AppError");
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_CHECK_BALANCE, VEVENT_INSUFFICIENT_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_GIVE_BONUS_IF_APPLICABLE } = require("../event/class");
+const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_CHECK_BALANCE, VEVENT_INSUFFICIENT_BALANCE, VEVENT_TRANSACTION_ERROR, VEVENT_GIVE_BONUS_IF_APPLICABLE, VEVENT_NEW_REFERRAL } = require("../event/class");
 const { bot } = require("./bot");
 const { nairaFormatter } = require("../helpers/utils");
+const { ROLES } = require("../helpers/consts");
+
+vEvent.on(VEVENT_NEW_REFERRAL, (telegramId) => {
+  bot.sendMessage(telegramId, 'Hurray! Someone just created an account with your referral code. You will start receiving bonus once the person starts transacting.')
+});
 
 vEvent.on(VEVENT_ACCOUNT_CREATED, async (userID) => {
   const q = await User.find({ role: ROLES.admin }, { uid: 1 });

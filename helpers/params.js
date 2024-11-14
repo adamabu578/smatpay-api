@@ -22,4 +22,6 @@ module.exports = {
     commissionKey: 'commissionKey',
     nameOnCard: 'nameOnCard',
     type: 'type',
+    referralCode: 'referralCode',
+    referrer: 'referrer',
 };

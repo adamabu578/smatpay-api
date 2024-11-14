@@ -21,7 +21,7 @@ const transactionSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    unitPrice: {
+    unitPrice: { //the real unit price
         type: Number,
         required: true,
     },
@@ -36,11 +36,11 @@ const transactionSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
-    amount: {
+    amount: { //unit price after removing commission
         type: Number,
         required: true
     },
-    totalAmount: {
+    totalAmount: { //amount multiply by quantity
         type: Number,
         required: true
     },
