@@ -12,7 +12,7 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction2, updateTransaction, afterTransaction } = require("../helpers/utils");
+const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
 const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES, COMMISSION_TYPE } = require("../helpers/consts");
 const { sendTelegramDoc, bot } = require("./bot");
@@ -122,7 +122,7 @@ const singleTopup = catchAsync(async (req, res, next) => {
   // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   // req.body[P.commissionKey] = `vtu-${req.body[P.provider]}`;
 
-  initTransaction2(req, service, next, async (transactionId, options) => {
+  initTransaction(req, service, next, async (transactionId, options) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
@@ -217,7 +217,7 @@ exports.subData = catchAsync(async (req, res, next) => {
   // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   // req.body[P.commissionKey] = `data-${req.body[P.provider]}`;
 
-  initTransaction2(req, service, next, async (transactionId) => {
+  initTransaction(req, service, next, async (transactionId) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
@@ -283,7 +283,7 @@ exports.tvSub = catchAsync(async (req, res, next) => {
   // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   // req.body[P.commissionKey] = `${req.body[P.provider]}`;
 
-  initTransaction2(req, service, next, async (transactionId) => {
+  initTransaction(req, service, next, async (transactionId) => {
     // const resp = await fetch(`${process.env.VTPASS_TEST_API}/pay`, {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
@@ -320,7 +320,7 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
   // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
   // req.body[P.commissionKey] = `${req.body[P.provider]}`;
 
-  initTransaction2(req, service, next, async (transactionId) => {
+  initTransaction(req, service, next, async (transactionId) => {
     // const resp = await fetch(`${process.env.VTPASS_TEST_API}/pay`, {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
@@ -366,7 +366,7 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
 
   const networkCode = BIZ_KLUB_NETWORK_CODES[req.body[P.provider]];
 
-  initTransaction2(req, service, next, async (transactionId, option) => {
+  initTransaction(req, service, next, async (transactionId, option) => {
     const resp = await fetch(process.env.BIZ_KLUB_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -497,7 +497,7 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   req.body[P.amount] = amount;
   req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
-  initTransaction2(req, service, next, async (transactionId, options) => {
+  initTransaction(req, service, next, async (transactionId, options) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
@@ -708,7 +708,7 @@ exports.purchaseElectricity = catchAsync(async (req, res, next) => {
   // req.body[P.amount] = amount;
   // req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
-  initTransaction2(req, service, next, async (transactionId, option) => {
+  initTransaction(req, service, next, async (transactionId, option) => {
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
