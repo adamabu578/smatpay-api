@@ -28,7 +28,7 @@ router.post('/electricity/recipient/verify', auth, base.verifyMeterNo);
 router.post('/electricity/purchase', auth, base.purchaseElectricity);
 
 router.post('/epin/airtime', auth, base.genAirtimePin);
-router.get('/epin/exam', auth, base.getExamPIN);
+router.get('/epin/exam', auth, base.previewExamPIN); //preview an exam PIN before purchase
 router.post('/epin/exam', auth, base.buyExamPIN);
 
 router.get('/transactions', auth, base.listTransactions);

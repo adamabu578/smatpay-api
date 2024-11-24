@@ -226,31 +226,39 @@ const menuActions = {
       return 'An error occured';
     }
   },
-  listExamPinVariations: async (msg, q) => {
+  previewExamPIN: async (msg, q) => {
     try {
-      const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker' };
+      const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker', _utmeRegPin: 'utme' };
       const resp = await fetch(`${process.env.BASE_URL}/epin/exam?type=${serviceTypeMap[q.options.service]}`, {
         headers: { 'Authorization': `Bearer ${msg.from.key}` },
       });
       const json = await resp.json();
-      const variations = json.data.variations;
-      await Session.updateOne({ _id: q._id }, { data: { ...q.data, variations } });
-      const str = `${variations[0].name}\nPrice: N${variations[0].variation_amount}\n\n\nEnter quantity`;
+      // const variations = json.data.variations;
+      const pin = json.data;
+      await Session.updateOne({ _id: q._id }, { data: { ...q.data, preview: pin } });
+      const str = `${pin.name}\nPrice: N${pin.amount}\n\n\nEnter quantity`;
       return str;
     } catch (error) {
+      console.log('previewExamPIN ::: ERROR :::', error);
       return 'An error occured';
     }
   },
   buyExamPIN: async (msg, q) => {
     try {
       if (!isNaN(q.options.quantity)) {
-        const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker' };
+        const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker', _utmeRegPin: 'utme' };
         const resp = await fetch(`${process.env.BASE_URL}/epin/exam`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
-          body: JSON.stringify({ serviceCode: serviceTypeMap[q.options.service], variationCode: q?.data?.variations[0].variation_code, quantity: q.options.quantity }),
+          body: JSON.stringify({
+            serviceCode: serviceTypeMap[q.options.service],
+            // variationCode: q?.data?.variations[0].variation_code, 
+            quantity: q.options.quantity
+          }),
         });
+        console.log('buyExamPIN ::: resp.status :::', resp.status);
         const json = await resp.json();
+        console.log('buyExamPIN ::: json :::', json);
         let str = json?.description ?? json.msg; //If an error occured and no description field
         if (json.status == 'success') {
           for (let i = 0; i < json.pins.length; i++) {
@@ -266,6 +274,7 @@ const menuActions = {
         return 'Invalid quantity';
       }
     } catch (error) {
+      console.log('buyExamPIN ::: ERROR :::', error);
       return 'An error occured';
     }
   },
@@ -312,7 +321,7 @@ const onboardOps = { 1: { n: 'Already registered (on the mobile or web)? Link ac
 const networks = ['MTN', 'Airtel', 'Glo', '9mobile'];
 const smeOps = ['Glo', '9mobile'];
 const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
-const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' } };
+const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' }, 4: { n: 'UTME Registration PIN', k: '_utmeRegPin' } };
 const electOps = { 1: { n: 'Prepaid', k: '_prepaidElect' }, 2: { n: 'Postpaid', k: '_postpaidElect' } };
 const balOps = {
   1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (auto)', k: '_topupBalAuto' }
@@ -564,11 +573,15 @@ const menus = [
   },
   {
     key: '_waecRegPin',
-    steps: [{ action: 'listExamPinVariations', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
+    steps: [{ action: 'previewExamPIN', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
   },
   {
     key: '_waecCheckPin',
-    steps: [{ action: 'listExamPinVariations', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
+    steps: [{ action: 'previewExamPIN', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
+  },
+  {
+    key: '_utmeRegPin',
+    steps: [{ action: 'previewExamPIN', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
   },
   {
     key: '_prepaidElect',
