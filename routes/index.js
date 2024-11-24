@@ -27,6 +27,8 @@ router.post('/tv/renew', auth, base.tvRenew);
 router.post('/electricity/recipient/verify', auth, base.verifyMeterNo);
 router.post('/electricity/purchase', auth, base.purchaseElectricity);
 
+router.post('/airtime/to/cash', auth, base.airtime2Cash);
+
 router.post('/epin/airtime', auth, base.genAirtimePin);
 router.get('/epin/exam', auth, base.getExamPIN);
 router.post('/epin/exam', auth, base.buyExamPIN);

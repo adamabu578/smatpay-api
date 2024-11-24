@@ -342,6 +342,49 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
   });
 });
 
+exports.airtime2Cash = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.provider, P.creditSource, P.amount]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+  if (isNaN(req.body[P.amount])) return next(new AppError(400, `${P.denomination} must be a number`));
+
+  // const DV = { 100: 1, 200: 2, 400: 4, 500: 5, 750: 7.5, 1000: 10, 1500: 15 }; //denominations 
+
+  req.body[P.provider] = req.body[P.provider].toLowerCase();
+
+  const serviceCode = `airtime-2-cash`;
+
+  const service = await Service.findOne({ code: serviceCode }); // { _id: 1, templates: 1 }
+  if (!service) return next(new AppError(500, 'Invalid service code'));
+
+  // req.body[P.serviceId] = service._id;
+  req.body[P.recipient] = 'N/A';
+  // req.body[P.amount] = req.body[P.denomination];
+  // req.body[P.commissionType] = COMMISSION_TYPE.AMOUNT;
+  // req.body[P.commissionKey] = `pin-${req.body[P.provider]}-${req.body[P.denomination]}`;
+  // req.body[P.serviceVariation] = req.body[P.denomination];
+
+  const networkCode = BIZ_KLUB_NETWORK_CODES[req.body[P.provider]];
+
+  initTransaction(req, service, next, async (transactionId, option) => {
+    const resp = await fetch(process.env.BIZ_KLUB_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestType: "ATC",
+        networkCode: networkCode,
+        creditSource: req.body[P.creditSource], 
+        amount: req.body[P.amount],  
+        requestReference: transactionId,
+        encodedKey: BIZ_KLUB_KEY
+      }),
+    });
+    const json = await resp.json();
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.BIZKLUB);
+    res.status(respCode).json({ status, msg });
+    updateTransaction(obj, req.user.id);
+  });
+});
+
 exports.genAirtimePin = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.denomination, P.quantity, P.nameOnCard]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));

@@ -24,4 +24,5 @@ module.exports = {
     type: 'type',
     referralCode: 'referralCode',
     referrer: 'referrer',
+    creditSource: 'creditSource',
 };

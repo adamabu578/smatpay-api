@@ -269,6 +269,20 @@ const menuActions = {
       return 'An error occured';
     }
   },
+  airtime2cash: async (msg, session) => {
+    try {
+      const resp = await fetch(`${process.env.BASE_URL}/airtime/to/cash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
+        body: JSON.stringify({ provider: session.options.provider, creditSource: session.options.source, amount: session.options.amount }),
+      });
+      if (resp.status == 200) return; //Successful, the file would be sent
+      const json = await resp.json();
+      return json?.msg;
+    } catch (error) {
+      return 'An error occured';
+    }
+  },
   electVerifyMeterNo: async (msg, q) => {
     try {
       const resp = await fetch(`${process.env.BASE_URL}/tv/card/verify`, {
@@ -493,6 +507,12 @@ const menus = [
     command: 'epin',
     description: 'Airtime, WAEC, UTME pins',
     steps: [{ msg: epinsOpsMsg(), key: 'service', value: (opt) => epinsOpsK(opt) }, { action: 'subMenu' }],
+  },
+  {
+    key: 'Airtime to Cash [Testing]',
+    command: 'airtime2cash',
+    description: 'Convert airtime to cash',
+    steps: [{ msg: networkMsg(), key: 'provider', value: (opt) => networkOpsK(opt) }, { msg: 'Enter phone number', key: 'source', value: (src) => src }, { msg: 'Enter amount', key: 'amount', value: (amount) => amount }, { action: 'airtime2cash', isEnd: true }],
   },
   {
     key: 'electricity',
