@@ -511,7 +511,7 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
       quantity: req.body[P.quantity],
       phone: req.body[P.recipient]
     };
-    body.billersCode = '0123456789';
+    body.billersCode = '0123';
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
