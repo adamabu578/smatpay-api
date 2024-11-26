@@ -30,7 +30,7 @@ router.post('/electricity/purchase', auth, base.purchaseElectricity);
 router.post('/airtime/to/cash', auth, base.airtime2Cash);
 
 router.post('/epin/airtime', auth, base.genAirtimePin);
-router.get('/epin/exam', auth, base.getExamPIN);
+router.get('/epin/exam', auth, base.previewExamPIN); //preview an exam PIN before purchase
 router.post('/epin/exam', auth, base.buyExamPIN);
 
 router.get('/transactions', auth, base.listTransactions);
