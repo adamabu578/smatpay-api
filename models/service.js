@@ -52,6 +52,9 @@ const serviceSchema = new mongoose.Schema({
     vendorCode: {
         type: String
     },
+    vendorVariationCode: {
+        type: String
+    },
     // commissionMode: { //should be removed later
     //     type: Number,
     //     required: true,

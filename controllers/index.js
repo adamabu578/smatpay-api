@@ -485,32 +485,32 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
 });
 
 const getVariations = async (vendorCode, next) => {
-  console.log('vendorCode', vendorCode);
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
-  console.log('resp.status', resp.status);
   const json = await resp.json();
-  console.log('getVariations', json);
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
   return json;
 }
 
-exports.getExamPIN = catchAsync(async (req, res, next) => {
+exports.previewExamPIN = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.query, [P.type]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const q = await Service.findOne({ code: req.query[P.type] });
-  if (!q) return next(new AppError(500, 'Invalid service type'));
+  const service = await Service.findOne({ code: req.query[P.type] });
+  if (!service) return next(new AppError(500, 'Invalid service type'));
 
-  const json = await getVariations(q?.vendorCode, next);
+  const json = await getVariations(service?.vendorCode, next);
+  const variations = json?.content?.variations ?? json?.content?.varations;
+  const pin = (variations?.filter(i => i?.variation_code == service?.vendorVariationCode))[0];
 
   res.status(200).json({
     status: 'success',
-    msg: 'Variations listed',
+    msg: 'PIN details',
     data: {
-      name: q.title,
-      variations: (json?.content?.variations ?? json?.content?.varations)?.map(i => ({ ...i, variation_amount: calcServicePrice(q, { vendorPrice: i.variation_amount }) }))
+      name: service.title,
+      serviceCode: service.code,
+      amount: calcServicePrice(service, { vendorPrice: pin.variation_amount })
     }
   });
 });
@@ -521,7 +521,9 @@ const getVariationAmtFromVTPassJsonResp = (json, variationCode) => {
 }
 
 exports.buyExamPIN = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.body, [P.serviceCode, P.variationCode]);
+  const missing = pExCheck(req.body, [P.serviceCode
+    // , P.variationCode
+  ]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   const { format } = req.query;
@@ -530,9 +532,10 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   if (!service) return next(new AppError(500, 'Invalid service type'));
 
   const json = await getVariations(service?.vendorCode, next);
-  const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
-  if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
-  const amount = calcServicePrice(service, { vendorPrice: varationAmount });
+  // const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
+  const variationAmount = getVariationAmtFromVTPassJsonResp(json, service?.vendorVariationCode);
+  if (!variationAmount) return next(new AppError(400, 'Invalid variation code'));
+  const amount = calcServicePrice(service, { vendorPrice: variationAmount });
 
   if (!req.body?.[P.recipient]) {
     const q = await User.findOne({ role: ROLES.admin }, { uid: 1 });
@@ -543,16 +546,19 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
   initTransaction(req, service, next, async (transactionId, options) => {
+    const body = {
+      request_id: transactionId,
+      serviceID: service.vendorCode,
+      // variation_code: req.body[P.variationCode],
+      variation_code: service?.vendorVariationCode,
+      quantity: req.body[P.quantity],
+      phone: req.body[P.recipient]
+    };
+    body.billersCode = '0123';
     const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-      body: JSON.stringify({
-        request_id: transactionId,
-        serviceID: service.vendorCode,
-        variation_code: req.body[P.variationCode],
-        quantity: req.body[P.quantity],
-        phone: req.body[P.recipient]
-      }),
+      body: JSON.stringify(body),
     });
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
@@ -567,7 +573,9 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
         jsonResp.msg = 'File sent to your telegram';
       } else {
         jsonResp.description = fileName;
-        jsonResp = { ...jsonResp, ...obj?.respObj };
+        if(obj?.respObj?.pins) {
+          jsonResp.pins = obj.respObj.pins;
+        }
       }
     }
     res.status(respCode).json(jsonResp);

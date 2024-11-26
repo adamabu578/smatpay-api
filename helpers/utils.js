@@ -4,8 +4,8 @@ const { default: BigNumber } = require('bignumber.js');
 
 const { DEFAULT_LOCALE, COMMISSION_TYPE } = require('./consts');
 const { REFUND_STATUS, TRANSACTION_STATUS, VENDORS } = require("./consts");
-const { vEvent, 
-    VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE, VEVENT_GIVE_BONUS_IF_APPLICABLE 
+const { vEvent,
+    VEVENT_TRANSACTION_ERROR, VEVENT_INSUFFICIENT_BALANCE, VEVENT_CHECK_BALANCE, VEVENT_GIVE_BONUS_IF_APPLICABLE
 } = require("../event/class");
 
 const Transaction = require("../models/transaction");
@@ -234,9 +234,14 @@ exports.afterTransaction = (transactionId, json, vendor) => {
                     pins: json?.tokens.map(i => ({ pin: i }))
                 };
             }
+            if (json?.Pin) { //utme
+                obj.respObj = {
+                    pins: [{ pin: this.removeAllWhiteSpace(json?.Pin.split(':')[1]) }]
+                };
+            }
             if (json?.token) { //electricity
                 obj.respObj = {
-                    token: removeAllWhiteSpace(json?.token.split(':')[1])
+                    token: this.removeAllWhiteSpace(json?.token.split(':')[1])
                 };
             }
             if (json?.purchased_code) { //still electricity. this is just to hold the full value
