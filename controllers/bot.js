@@ -512,7 +512,7 @@ const menus = [
     key: 'Airtime to Cash [Testing]',
     command: 'airtime2cash',
     description: 'Convert airtime to cash',
-    steps: [{ msg: networkMsg(), key: 'provider', value: (opt) => networkOpsK(opt) }, { msg: 'Enter phone number', key: 'source', value: (src) => src }, { msg: 'Enter amount', key: 'amount', value: (amount) => amount }, { action: 'airtime2cash', isEnd: true }],
+    steps: [{ msg: networkMsg(), key: 'provider', value: (opt) => networkOpsK(opt) }, { msg: 'Enter phone number', key: 'source', value: (src) => src }, { msg: 'Enter amount (minimum is ₦1,000)', key: 'amount', value: (amount) => amount }, { action: 'airtime2cash', isEnd: true }],
   },
   {
     key: 'electricity',
