@@ -488,7 +488,9 @@ const getVariations = async (vendorCode, next) => {
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
+  console.log('getVariations ::: resp.status :::', resp.status);
   const json = await resp.json();
+  console.log('getVariations ::: json :::', json);
   if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
   return json;
 }
@@ -499,6 +501,7 @@ exports.previewExamPIN = catchAsync(async (req, res, next) => {
 
   const service = await Service.findOne({ code: req.query[P.type] });
   if (!service) return next(new AppError(500, 'Invalid service type'));
+  console.log('previewExamPIN ::: service :::', service);
 
   const json = await getVariations(service?.vendorCode, next);
   const variations = json?.content?.variations ?? json?.content?.varations;
