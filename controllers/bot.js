@@ -337,10 +337,7 @@ const smeOps = ['Glo', '9mobile'];
 const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
 const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' }, 4: { n: 'UTME Registration PIN', k: '_utmeRegPin' } };
 const electOps = { 1: { n: 'Prepaid', k: '_prepaidElect' }, 2: { n: 'Postpaid', k: '_postpaidElect' } };
-const balOps = {
-  1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (auto)', k: '_topupBalAuto' }
-  // , 3: { n: 'Request Topup (manual)', k: '_topupBalManual' }, 4: { n: 'I have made a transfer', k: '_confirmTransfer' } 
-};
+const balOps = { 1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (instant)', k: '_topupBalInstant' }, 3: { n: 'Topup balance (manual)', k: '_topupBalManual' } };
 const acctOps = { 1: { n: 'Balance threshold', k: '_balThreshold' }, 2: { n: 'Referral link', k: '_referralLink' } };
 const epinDenominations = {
   1: 100, 2: 200, 3: 500
@@ -548,6 +545,12 @@ const menus = [
     steps: [{ msg: acctOpsMsg(), key: 'service', value: (opt) => acctOpsK(opt) }, { action: 'subMenu' }],
   },
   {
+    key: 'Contact us',
+    command: 'contactus',
+    description: 'Contact us',
+    steps: [{ msg: 'Whatsapp link\nhttps://wa.me/2348165661377\n\nCall\n+2348165661377, +2349073707533', isEnd: true }],
+  },
+  {
     key: '_welcome',
     steps: [{ msg: onboardMsg(), key: 'service', value: (opt) => onboardOpsK(opt) }, { action: 'subMenu' }],
   },
@@ -555,21 +558,13 @@ const menus = [
     key: '_checkBalance',
     steps: [{ action: 'checkBalance', isEnd: true }],
   },
-  // {
-  //   key: '_topupBalAuto',
-  //   steps: [{ msg: 'Enter amount', key: 'amount', value: (input) => input }, { action: 'topupBalance', isEnd: true }],
-  // },
   {
-    key: '_topupBalAuto',
+    key: '_topupBalInstant',
     steps: [{ msg: 'Sorry! this option is currently not available kindly use the manual option.', isEnd: true }],
   },
   {
     key: '_topupBalManual',
-    steps: [{ msg: 'Kindly make a transfer to this account and confirm the payment with the next option\n\nRoware Limited 2033040743 First Bank.', isEnd: true }],
-  },
-  {
-    key: '_confirmTransfer',
-    steps: [{ msg: 'Request received, your account will be credited immediately the payment is received', isEnd: true }],
+    steps: [{ msg: 'Step 1: Make a transfer to this account\nRoware Limited 2033040743 First Bank\n\nStep 2: Send the proof of payment to this link https://wa.me/2348165661377', isEnd: true }],
   },
   {
     key: '_linkAccount',
