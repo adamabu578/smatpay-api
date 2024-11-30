@@ -229,7 +229,7 @@ const menuActions = {
   previewExamPIN: async (msg, session) => {
     try {
       const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker', _utmeRegPin: 'utme', _utmeDEPin: 'utme-de' };
-      const resp = await fetch(`${process.env.BASE_URL}/epin/exam?type=${serviceTypeMap[session.options.service]}`, {
+      const resp = await fetch(`${process.env.BASE_URL}/epin/exam/${serviceTypeMap[session.options.service]}`, {
         headers: { 'Authorization': `Bearer ${msg.from.key}` },
       });
       const json = await resp.json();

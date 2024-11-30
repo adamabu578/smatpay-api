@@ -485,15 +485,15 @@ const getVariations = async (vendorCode, next) => {
   // console.log('getVariations ::: resp.status :::', resp.status);
   const json = await resp.json();
   // console.log('getVariations ::: json :::', json);
-  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list varations.'));
+  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list variations.'));
   return json;
 }
 
 exports.previewExamPIN = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.query, [P.type]);
+  const missing = pExCheck(req.params, [P.serviceCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const service = await Service.findOne({ code: req.query[P.type] });
+  const service = await Service.findOne({ code: req.params[P.serviceCode] });
   if (!service) return next(new AppError(500, 'Invalid service'));
   // console.log('previewExamPIN ::: service :::', service);
 
