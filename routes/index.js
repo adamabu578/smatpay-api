@@ -31,6 +31,7 @@ router.post('/airtime/to/cash', auth, base.airtime2Cash);
 
 router.post('/epin/airtime', auth, base.genAirtimePin);
 router.get('/epin/exam', auth, base.previewExamPIN); //preview an exam PIN before purchase
+router.post('/epin/exam/:serviceCode/verify', auth, base.verifyExamInput); //to verify any exam input e.g UTME profile code
 router.post('/epin/exam', auth, base.buyExamPIN);
 
 router.get('/transactions', auth, base.listTransactions);

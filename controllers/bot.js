@@ -226,41 +226,77 @@ const menuActions = {
       return 'An error occured';
     }
   },
-  previewExamPIN: async (msg, q) => {
+  previewExamPIN: async (msg, session) => {
     try {
-      const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker', _utmeRegPin: 'utme' };
-      const resp = await fetch(`${process.env.BASE_URL}/epin/exam?type=${serviceTypeMap[q.options.service]}`, {
+      const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker', _utmeRegPin: 'utme', _utmeDEPin: 'utme-de' };
+      const resp = await fetch(`${process.env.BASE_URL}/epin/exam?type=${serviceTypeMap[session.options.service]}`, {
         headers: { 'Authorization': `Bearer ${msg.from.key}` },
       });
       const json = await resp.json();
-      // const variations = json.data.variations;
-      const pin = json.data;
-      await Session.updateOne({ _id: q._id }, { data: { ...q.data, preview: pin } });
-      const str = `${pin.name}\nPrice: N${pin.amount}\n\n\nEnter quantity`;
+      let str = json?.msg ?? 'An error occured please try again';
+      if (resp.status == 200 && json.status == 'success') {
+        // const variations = json.data.variations;
+        const pin = json.data;
+        await Session.updateOne({ _id: session._id }, { data: { ...session.data, preview: pin } });
+         str = `${pin.name}\nPrice: N${pin.amount}\n\n\n${session?.nextMsg ?? 'Enter quantity'}`;
+      }
       return str;
     } catch (error) {
       console.log('previewExamPIN ::: ERROR :::', error);
       return 'An error occured';
     }
   },
-  buyExamPIN: async (msg, q) => {
+  verifyProfileCode: async (msg, session) => {
     try {
-      if (!isNaN(q.options.quantity)) {
-        const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker', _utmeRegPin: 'utme' };
+      const resp = await fetch(`${process.env.BASE_URL}/epin/exam/utme/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
+        body: JSON.stringify({
+          profileCode: session.options.profileCode
+        }),
+      });
+      // console.log('verifyProfileCode ::: resp.status :::', resp.status);
+      const json = await resp.json();
+      // console.log('verifyProfileCode ::: json :::', json);
+      if (json?.data) {
+        await Session.updateOne({ _id: session._id }, { data: { ...session.data, profile: json.data } });
+        let str = '';
+        str += `Candidate Name: ${json.data.Customer_Name}`;
+        // str += `\nStatus: ${json.data.Status}`;
+
+        str += `\n\nEnter quantity`;
+        return str;
+      } else {
+        // return json?.msg;
+        return 'Sorry we could not reach the provider to verify you at the moment please try again'
+      }
+    } catch (error) {
+      console.log('verifyProfileCode ::: ERROR :::', error);
+      return 'An error occured';
+    }
+  },
+  buyExamPIN: async (msg, session) => {
+    try {
+      if (!isNaN(session.options.quantity)) {
+        const serviceTypeMap = { _waecRegPin: 'waec-registration', _waecCheckPin: 'waec-checker', _utmeRegPin: 'utme', _utmeDEPin: 'utme-de' };
+        const body = {
+          serviceCode: serviceTypeMap[session.options.service],
+          // variationCode: q?.data?.variations[0].variation_code, 
+          quantity: session.options.quantity
+        };
+        if (session.options?.profileCode) { //case of utme
+          body.profileCode = session.options.profileCode;
+        }
         const resp = await fetch(`${process.env.BASE_URL}/epin/exam`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
-          body: JSON.stringify({
-            serviceCode: serviceTypeMap[q.options.service],
-            // variationCode: q?.data?.variations[0].variation_code, 
-            quantity: q.options.quantity
-          }),
+          body: JSON.stringify(body),
         });
-        console.log('buyExamPIN ::: resp.status :::', resp.status);
+        // console.log('buyExamPIN ::: resp.status :::', resp.status);
         const json = await resp.json();
-        console.log('buyExamPIN ::: json :::', json);
+        // console.log('buyExamPIN ::: json :::', json);
         let str = json?.description ?? json.msg; //If an error occured and no description field
-        if (json.status == 'success') {
+        if (resp.status == 200 && json.status == 'success') {
           for (let i = 0; i < json.pins.length; i++) {
             str += `\n\nPIN: ${json.pins[i].pin}`;
             if (json.pins[i]?.serial) {
@@ -268,7 +304,7 @@ const menuActions = {
             }
           }
         }
-        console.log(str);
+        // console.log(str);
         return str;
       } else {
         return 'Invalid quantity';
@@ -335,7 +371,7 @@ const onboardOps = { 1: { n: 'Already registered (on the mobile or web)? Link ac
 const networks = ['MTN', 'Airtel', 'Glo', '9mobile'];
 const smeOps = ['Glo', '9mobile'];
 const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
-const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' }, 4: { n: 'UTME Registration PIN', k: '_utmeRegPin' } };
+const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' }, 4: { n: 'JAMB UTME PIN', k: '_utmeRegPin' }, 5: { n: 'JAMB Direct Entry PIN', k: '_utmeDEPin' } };
 const electOps = { 1: { n: 'Prepaid', k: '_prepaidElect' }, 2: { n: 'Postpaid', k: '_postpaidElect' } };
 const balOps = { 1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (instant)', k: '_topupBalInstant' }, 3: { n: 'Topup balance (manual)', k: '_topupBalManual' } };
 const acctOps = { 1: { n: 'Balance threshold', k: '_balThreshold' }, 2: { n: 'Referral link', k: '_referralLink' } };
@@ -596,7 +632,11 @@ const menus = [
   },
   {
     key: '_utmeRegPin',
-    steps: [{ action: 'previewExamPIN', key: 'quantity', value: (opt) => opt }, { action: 'buyExamPIN', isEnd: true }],
+    steps: [{ action: 'previewExamPIN', key: 'profileCode', value: (input) => input, nextMsg: 'Enter Profile Code' }, { action: 'verifyProfileCode', key: 'quantity', value: (input) => input }, { action: 'buyExamPIN', isEnd: true }],
+  },
+  {
+    key: '_utmeDEPin',
+    steps: [{ action: 'previewExamPIN', key: 'profileCode', value: (input) => input, nextMsg: 'Enter Profile Code' }, { action: 'verifyProfileCode', key: 'quantity', value: (input) => input }, { action: 'buyExamPIN', isEnd: true }],
   },
   {
     key: '_prepaidElect',
@@ -715,11 +755,13 @@ const botProcess = async (msg, q, serviceKey) => {
   //   ],
   // ]);
   if (menu?.msg) {
-    bot.sendMessage(msg.chat.id, menu.msg, replyOption);
+    bot.sendMessage(msg.chat.id, menu.msg, replyOption); //respond with the message in the menu step
   } else if (menu?.action) {
-    const q2 = await Session.findOne({ _id: q._id });
-    const resp = await menuActions[menu?.action](msg, q2);
-    if (resp)
+    const session = await Session.findOne({ _id: q._id });
+    if (menu?.nextMsg)
+      session.nextMsg = menu?.nextMsg; //in case there is a specific message that should be displayed next in the response
+    const resp = await menuActions[menu?.action](msg, session); //calling the function in the menu step
+    if (resp) //if the step function has a response
       bot.sendMessage(msg.chat.id, resp, replyOption);
   }
 }

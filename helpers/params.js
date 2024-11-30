@@ -25,4 +25,5 @@ module.exports = {
     referralCode: 'referralCode',
     referrer: 'referrer',
     creditSource: 'creditSource',
+    profileCode: 'profileCode',
 };
