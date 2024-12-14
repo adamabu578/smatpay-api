@@ -27,7 +27,7 @@ class Auth {
 
     if (req?.account?.secret) {
       // const query = isLive(req.account.secret) ? { liveKey: req.account.secret } : { testKey: req.account.secret };
-      const query = { liveKey: req.account.secret };
+      const query = process.env.NODE_ENV != 'development' ? { liveKey: req.account.secret } : { testKey: req.account.secret };
       // console.log(query);
       const q = await User.find(query, { _id: 1, role: 1 });
       if (q?.length == 1) {
@@ -38,6 +38,16 @@ class Auth {
     next();
   });
 }
+
+// exports.preAuth = (req, res, next) => {
+//   new Auth(process.env.PRE_AUTH_SECRET).auth(req, res, () => {
+//     if (req?.user) {
+//       next();
+//     } else {
+//       return next(new AppError(403, 'Access denied'));
+//     }
+//   });
+// };
 
 exports.auth = (req, res, next) => {
   new Auth().auth(req, res, () => {

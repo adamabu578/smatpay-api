@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const fetch = require('node-fetch');
 const randtoken = require('rand-token');
 const { uid } = require("uid");
+const firebase = require('firebase-admin');
 
 const catchAsync = require("../helpers/catchAsync");
 const Service = require("../models/service");
@@ -14,9 +15,58 @@ const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES } = require("../helpers/consts");
+const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES, NETWORKS } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
 const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
+
+const serviceAccount = require("../secret/v24u-35c94-firebase-adminsdk-uudcj-3773af88d0.json");
+const Otl = require("../models/otl");
+
+firebase.initializeApp({
+  credential: firebase.credential.cert(serviceAccount)
+});
+
+exports.test = catchAsync(async (req, res, next) => {
+  res.status(200).json([
+    {
+      "userId": 1,
+      "id": 5,
+      "title": "laboriosam mollitia et enim quasi adipisci quia provident illum",
+      "completed": false
+    },
+    {
+      "userId": 1,
+      "id": 6,
+      "title": "qui ullam ratione quibusdam voluptatem quia omnis",
+      "completed": false
+    },
+  ]
+  );
+});
+
+exports.setFCMToken = catchAsync(async (req, res, next) => {
+  console.log('setFCMToken ::: req.body', req.body);
+  const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
+  console.log(q);
+  res.status(200).json({ status: 'success', msg: 'Token updated' });
+});
+
+exports.fcmPushMsg = catchAsync(async (req, res, next) => {
+  console.log('fcmPushMsg ::: req.body', req.body);
+  const q = await User.findOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: 1 });
+  const token = q?.fcmToken;
+  // const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
+  console.log(q);
+  const message = {
+    notification: {
+      title: null,
+      body: null,
+    },
+    token,
+  };
+  firebase.messaging().send(message);
+  res.status(200).json({ status: 'success', msg: 'Message pushed' });
+});
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -66,6 +116,16 @@ exports.signUp = catchAsync(async (req, res, next) => {
   }
 });
 
+const afterLogin = (req, res, user) => {
+  const payload = { id: user._id.toHexString(), firstName: user.firstName };
+
+  const token = jwt.sign({ payload }, process.env.AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
+
+  req.session.token = token;
+
+  res.status(200).json({ status: "success", msg: "Logged in" });
+}
+
 exports.login = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.email, P.password]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
@@ -74,18 +134,89 @@ exports.login = catchAsync(async (req, res, next) => {
 
   if (!user) return next(new AppError(400, 'Invalid email and/or password'));
 
+  if (!user?.password) return res.status(403).json({ status: "error", msg: 'Password is not set.', next: 'no-password' });
+
   const isPasswordValid = bcrypt.compareSync(req.body.password, user.password);
 
   if (!isPasswordValid) return next(new AppError(400, 'Invalid email and/or password'));
 
-  const payload = { id: user._id.toHexString(), firstName: user.firstName };
-
-  const token = jwt.sign({ payload }, process.env.AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
-
-  req.session.token = token;
-
-  res.status(200).json({ status: "success", msg: "Logged in" });
+  afterLogin(req, res, user);
 });
+
+exports.getOtl = catchAsync(async (req, res, next) => { //otl = one time link
+  const field = {};
+  if (pExCheck(req.body, [P.email]).length == 0) {
+    field.name = P.email;
+    field.value = req.body[P.email];
+  } else if (pExCheck(req.body, [P.telegramId]).length == 0) {
+    field.name = P.telegramId;
+    field.value = req.body[P.telegramId];
+  } else {
+    return next(new AppError(400, `Either ${P.email} or ${P.telegramId} is required.`));
+  }
+
+  const user = await User.findOne({ [`uid.${[field.name]}`]: field.value });
+  if (!user) return next(new AppError(400, `Invalid ${field.name}`));
+
+  const token = randtoken.uid(12);
+
+  const q = await Otl.create({ uid: token, field, createdAt: new Date() });
+  if (!q) return next(new AppError(500, 'Request not successful'));
+
+  const otl = `${process.env.WEB_URL}/otl/${token}`;
+
+  const resp = field.name == P.email ? { status: 'success', msg: 'A One Time Link has been sent to your mail.' } : { status: 'success', msg: 'OTL generated.', data: { otl } }
+
+  res.status(200).json(resp);
+});
+
+exports.otlLogin = catchAsync(async (req, res, next) => {
+  const token = req.params.token;
+
+  const otl = await Otl.findOne({ uid: token });
+  if (!otl) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
+
+  const diffInMins = (new Date() - new Date(otl?.createdAt)) / (60 * 1000); //converted to minutes
+  const expiry = 10; //10 mins
+  if (otl?.isUsed == 1 || expiry - diffInMins < 0) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
+
+  const user = await User.findOne({ [`uid.${[otl.field.name]}`]: otl.field.value });
+  if (!user) return next(new AppError(400, 'Invalid account. Kindly get a new link'));
+  await Otl.updateOne({ _id: otl._id }, { isUsed: 1 });
+
+  afterLogin(req, res, user);
+});
+
+exports.sendPwdResetMail = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.email]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const payload = { email: req.body[P.email] };
+
+  const token = jwt.sign({ payload }, process.env.PRE_AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
+  console.log(token);
+
+  res.status(200).json({ status: 'success', msg: 'We have sent you a mail.' });
+});
+
+exports.setPassword = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.password, P.token]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const { payload } = jwt.verify(req.body[P.token], process.env.PRE_AUTH_SECRET);
+
+  const user = await User.findOne({ 'uid.email': payload[P.email] });
+
+  if (!user) return next(new AppError(400, 'Invalid account'));
+
+  const password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+
+  const q = await User.updateOne({ 'uid.email': payload[P.email] }, { password });
+  if (q.modifiedCount != 1) return next(new AppError(500, 'Request not successful'));
+
+  res.status(200).json({ status: 'success', msg: 'Request successful' });
+});
+
 
 exports.logout = catchAsync(async (req, res, next) => {
   req.session.destroy();
@@ -136,7 +267,7 @@ const singleTopup = catchAsync(async (req, res, next) => {
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    res.status(respCode).json({ status, msg });
+    res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, options);
   });
 });
@@ -191,6 +322,10 @@ exports.airtime = catchAsync(async (req, res, next) => {
 exports.listDataBundles = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.query, [P.provider]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  req.query[P.provider] = req.query[P.provider].toUpperCase();
+
+  if(!NETWORKS?.[req.query[P.provider]]) return next(new AppError(400, 'Invalid provider.'));
 
   const type = req.query?.type == 'sme' ? '-sme-' : '-';
 
@@ -570,29 +705,47 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
   initTransaction(req, service, next, async (transactionId, options) => {
-    const body = {
-      request_id: transactionId,
-      serviceID: service.vendorCode,
-      // variation_code: req.body[P.variationCode],
-      variation_code: service?.vendorVariationCode,
-      quantity: req.body[P.quantity],
-      phone: req.body[P.recipient]
-    };
-    if (req.body?.[P.profileCode]) { //case of utme
-      body.billersCode = req.body[P.profileCode];
-    }
-    console.log('buyExamPIN ::: body :::', body);
-    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    const resp = await fetch(`${process.env.EPIN_API}/waec/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apikey: process.env.EPIN_KEY,
+        service: "waec",
+        vcode: 'waecdirect',
+        // amount:
+        ref: transactionId
+      }),
     });
-    // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
+    console.log('buyExamPIN ::: resp.status :::', resp.status);
     const json = await resp.json();
-    // console.log('buyExamPIN ::: json :::', json);
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    console.log('buyExamPIN ::: json :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
+
+    // const body = {
+    //   request_id: transactionId,
+    //   serviceID: service.vendorCode,
+    //   // variation_code: req.body[P.variationCode],
+    //   variation_code: service?.vendorVariationCode,
+    //   quantity: req.body[P.quantity],
+    //   phone: req.body[P.recipient]
+    // };
+    // if (req.body?.[P.profileCode]) { //case of utme
+    //   body.billersCode = req.body[P.profileCode];
+    // }
+    // console.log('buyExamPIN ::: body :::', body);
+    // const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    //   body: JSON.stringify(body),
+    // });
+    // // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    // const json = await resp.json();
+    // // console.log('buyExamPIN ::: json :::', json);
+    // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+
     updateTransaction(obj, options);
-    let jsonResp = { status, msg }; 
+    let jsonResp = { status, msg };
     if (obj?.respObj) {
       let fileName = `${service.title} [${req.body[P.quantity]}]`;
       if (format == 'pdf') {

@@ -38,7 +38,11 @@ exports.bot = bot;
 exports.sendTelegramDoc = sendTelegramDoc;
 
 const menuActions = {
+  subMenu: async (msg, q) => {
+    await botProcess(msg, q, q.options.service);
+  },
   createAccount: async (msg, session) => {
+    console.log('contact :::', msg?.contact);
     const obj = { firstName: msg.from?.first_name, lastName: msg.from?.last_name ?? msg.from?.username, email: session.options.email, phone: session.options.phone, telegramId: msg.from.id };
     const sessions = await Session.find({ $and: [{ telegramId: msg.from.id }, { startParams: { $ne: null } }] }); //look for all sessions with startParams incase the user was referred
     if (sessions.length != 0) { //user was referred
@@ -51,9 +55,6 @@ const menuActions = {
     });
     const json = await resp.json();
     return json?.msg;
-  },
-  subMenu: async (msg, q) => {
-    await botProcess(msg, q, q.options.service);
   },
   airtime: async (msg, q) => {
     const resp = await fetch(`${process.env.BASE_URL}/airtime/vtu`, {
@@ -238,7 +239,7 @@ const menuActions = {
         // const variations = json.data.variations;
         const pin = json.data;
         await Session.updateOne({ _id: session._id }, { data: { ...session.data, preview: pin } });
-         str = `${pin.name}\nPrice: N${pin.amount}\n\n\n${session?.nextMsg ?? 'Enter quantity'}`;
+        str = `${pin.name}\nPrice: N${pin.amount}\n\n\n${session?.nextMsg ?? 'Enter quantity'}`;
       }
       return str;
     } catch (error) {
@@ -365,6 +366,17 @@ const menuActions = {
     const json = await resp.json();
     return json?.data.link;
   },
+  getOTL: async (msg, session) => {
+    const resp = await fetch(`${process.env.BASE_URL}/otl`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegramId: msg.from.id }),
+    });
+    const json = await resp.json();
+    if (json?.status == 'success') {
+      return `Kindly click on the link or copy and paste in the browser to login on the web.\n\nLink expires in 10 mins\n\n${json?.data?.otl}`;
+    }
+  },
 };
 
 const onboardOps = { 1: { n: 'Already registered (on the mobile or web)? Link account', k: '_linkAccount' }, 2: { n: 'Create a new account', k: '_createAccount' } };
@@ -374,7 +386,7 @@ const tvOps = ['DSTV', 'GOTV', 'Startimes', 'Showmax'];
 const epinsOps = { 1: { n: 'Recharge Card PIN', k: '_rechargePin' }, 2: { n: 'WAEC Registration PIN', k: '_waecRegPin' }, 3: { n: 'WAEC Result Checker PIN', k: '_waecCheckPin' }, 4: { n: 'JAMB UTME PIN', k: '_utmeRegPin' }, 5: { n: 'JAMB Direct Entry PIN', k: '_utmeDEPin' } };
 const electOps = { 1: { n: 'Prepaid', k: '_prepaidElect' }, 2: { n: 'Postpaid', k: '_postpaidElect' } };
 const balOps = { 1: { n: 'Check balance', k: '_checkBalance' }, 2: { n: 'Topup balance (instant)', k: '_topupBalInstant' }, 3: { n: 'Topup balance (manual)', k: '_topupBalManual' } };
-const acctOps = { 1: { n: 'Balance threshold', k: '_balThreshold' }, 2: { n: 'Referral link', k: '_referralLink' } };
+const acctOps = { 1: { n: 'Balance threshold', k: '_balThreshold' }, 2: { n: 'Referral link', k: '_referralLink' }, 3: { n: 'Get an OTL to login on the web', k: '_getOTL' } };
 const epinDenominations = {
   1: 100, 2: 200, 3: 500
   //, 4: 1000 
@@ -608,7 +620,18 @@ const menus = [
   },
   {
     key: '_createAccount',
-    steps: [{ msg: 'Enter email', key: 'email', value: (input) => input }, { msg: 'Enter phone number', key: 'phone', value: (input) => input }, { action: 'createAccount', isEnd: true }],
+    steps: [{ msg: 'Enter email', key: 'email', value: (input) => input }, {
+      msg: 'Enter phone number', key: 'phone', value: (input) => input, replyOption: {
+        parse_mode: "Markdown",
+        reply_markup: JSON.stringify({
+          keyboard: [
+            // [{ text: "Location", request_location: true }],
+            [{ text: "Click to Share Contact", request_contact: true }]
+          ],
+          one_time_keyboard: true
+        })
+      }
+    }, { action: 'createAccount', isEnd: true }],
   },
   {
     key: '_tvSubRenew',
@@ -653,6 +676,10 @@ const menus = [
   {
     key: '_referralLink',
     steps: [{ action: 'getReferralLink', isEnd: true }],
+  },
+  {
+    key: '_getOTL',
+    steps: [{ action: 'getOTL', isEnd: true, replyOption: { disable_web_page_preview: true, } }],
   }
 ];
 
@@ -699,7 +726,7 @@ const botProcess = async (msg, q, serviceKey) => {
       obj.user = msg.from._id;
     } else { //new user
       obj.telegramId = msg.from.id;
-      if (msg.text.startsWith('/start')) { //case when parameter is passed
+      if (msg.text?.startsWith('/start')) { //case when parameter is passed
         const words = msg.text.split(' ');
         obj.startParams = words[1];
       }
@@ -748,21 +775,17 @@ const botProcess = async (msg, q, serviceKey) => {
   }
 
   const replyOption = menu?.replyOption ?? {};
-  // const keyboard = Markup.inlineKeyboard([
-  //   [
-  //     Markup.button.callback('⚡ Status', 'status'),
-  //     Markup.button.callback('🙄 Help', 'help'),
-  //   ],
-  // ]);
   if (menu?.msg) {
-    bot.sendMessage(msg.chat.id, menu.msg, replyOption); //respond with the message in the menu step
+    await bot.sendMessage(msg.chat.id, menu.msg, replyOption); //respond with the message in the menu step
   } else if (menu?.action) {
     const session = await Session.findOne({ _id: q._id });
-    if (menu?.nextMsg)
+    if (menu?.nextMsg) {
       session.nextMsg = menu?.nextMsg; //in case there is a specific message that should be displayed next in the response
+    }
     const resp = await menuActions[menu?.action](msg, session); //calling the function in the menu step
-    if (resp) //if the step function has a response
-      bot.sendMessage(msg.chat.id, resp, replyOption);
+    if (resp) {//if the step function has a response
+      await bot.sendMessage(msg.chat.id, resp, replyOption);
+    }
   }
 }
 
@@ -796,9 +819,9 @@ bot.on('message', async msg => {
         botProcess(msg, null, MENU_STEPS._welcome);
       }
     } else if (!q2) {
-      console.log('Case 3');
+      console.log('Case 3 :::', msg);
       let serviceKey;
-      if (isNaN(msg.text) && msg.text.startsWith('/')) { //A command is entered e.g /airtime
+      if (isNaN(msg.text) && msg.text?.startsWith('/')) { //A command is entered e.g /airtime
         serviceKey = menus.filter(i => i.command == msg.text.replace('/', ''))[0]?.key;
       } else if (isNaN(msg.text)) { //A word is entered e.g airtime
         serviceKey = msg.text;
@@ -816,7 +839,7 @@ bot.on('message', async msg => {
     } else if (q2) {
       console.log('Case 4');
       let serviceKey;
-      if (msg.text.startsWith('/')) { //change of command in the middle of an ongoing session, close the current session and proceed to the new request automatically
+      if (msg.text?.startsWith('/')) { //change of command in the middle of an ongoing session, close the current session and proceed to the new request automatically
         serviceKey = menus.filter(i => i.command == msg.text.replace('/', ''))[0]?.key;
         if (mainSteps?.[serviceKey]) {
           closeSession(q2._id);
@@ -830,21 +853,3 @@ bot.on('message', async msg => {
     }
   }
 });
-
-// replyOption: {
-//   reply_markup: {
-//     inline_keyboard: [
-//       [
-//         // {
-//         //   text: "Yes",
-//         //   callback_data: "btn_yes"
-//         // },
-//         {
-//           text: "Use my phone number",
-//           callback_data: "request_contact",
-//           request_contact: true,
-//         },
-//       ]
-//     ]
-//   },
-// },

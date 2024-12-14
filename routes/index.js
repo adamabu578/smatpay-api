@@ -7,16 +7,25 @@ const { auth, authAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
+router.get('/test', base.test);
+
+router.post('/fcm/token', base.setFCMToken);
+router.post('/fcm/push', base.fcmPushMsg);
+
 router.post('/signup', base.signUp);
 router.post('/login', base.login);
+router.post('/otl', base.getOtl);
+router.get('/otl/:token', base.otlLogin);
 router.get('/logout', base.logout);
+router.post('/password/request', base.sendPwdResetMail);
+router.post('/password/reset', base.setPassword);
 
 router.get('/profile', auth, base.profile);
 router.get('/balance', auth, base.balance);
 router.get('/referral/link', auth, base.referralLink);
 router.post('/topup/init', auth, base.topupInit);
 
-router.post('/airtime/vtu', auth, base.airtime);
+router.post('/vtu/airtime', auth, base.airtime);
 router.get('/data/bundles', auth, base.listDataBundles);
 router.post('/data', auth, base.subData);
 router.get('/tv/plans', auth, base.listTVPlans);

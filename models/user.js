@@ -63,6 +63,9 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0.00,
     },
+    fcmToken: {
+        type: String,
+    },
     password: {
         type: String,
     },

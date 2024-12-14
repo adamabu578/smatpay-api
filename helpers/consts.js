@@ -46,7 +46,7 @@ exports.BOT_COMMANDS = {
     start: '.',
 };
 
-exports.networks = { 'MTN': 'MTN', 'Airtel': 'Airtel', 'Glo': 'Glo', '9mobile': 'etisalat' };
+exports.NETWORKS = { 'MTN': 'MTN', 'AIRTEL': 'Airtel', 'GLO': 'Glo', '9MOBILE': 'etisalat' };
 
 exports.BIZ_KLUB_NETWORK_CODES = { 'mtn': '803', 'airtel': '802', 'glo': '805', '9mobile': '809' };
 

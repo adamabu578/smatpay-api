@@ -26,4 +26,5 @@ module.exports = {
     referrer: 'referrer',
     creditSource: 'creditSource',
     profileCode: 'profileCode',
+    token: 'token',
 };

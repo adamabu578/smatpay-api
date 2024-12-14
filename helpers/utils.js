@@ -23,7 +23,7 @@ exports.pExCheck = (reqParams, array) => {
     let resp = [];
     reqParams = JSON.parse(JSON.stringify(reqParams));
     array.forEach(param => {
-        if (!reqParams.hasOwnProperty(param) || JSON.stringify(reqParams[param]) == '') {
+        if (!reqParams.hasOwnProperty(param) || reqParams[param] == "") {
             resp.push(param);
         }
     });
@@ -53,6 +53,39 @@ exports.calcServicePrice = (service, { vendorPrice, customer }) => {
 exports.removeAllWhiteSpace = (str) => {
     return str.replace(/ /g, '');
 }
+
+exports.sendEmail = async (email, subject, body, callback) => {
+    try {
+        const transporter = nodemailer.createTransport({
+            host: process.env.MAIL_HOST,
+            port: process.env.MAIL_PORT,
+            secure: true,
+            auth: {
+                user: process.env.MAIL_USER,
+                pass: process.env.MAIL_PWD,
+            },
+        });
+        const fields = {
+            from: `"V24u" <${process.env.MAIL_USER}>`, to: email, subject: subject, html: body,
+            // dsn: {
+            //     id: 'some random message specific id',
+            //     return: 'headers',
+            //     notify: ['failure', 'delay'],
+            //     recipient: 'noreply@qridex.com'
+            // }
+        };
+        if (callback) {
+            transporter.sendMail(fields)
+                .then(callback);
+        } else {
+           return await transporter.sendMail(fields);
+        }
+        // console.log('email sent sucessfully');
+    } catch (error) {
+        // console.log('email not sent');
+        // console.log(error);
+    }
+};
 
 exports.calcCommission = (unitPrice, qty, defaultUnitCommission, userUnitCommission, commissionType) => {
     // console.log(unitPrice, qty, defaultUnitCommission, userUnitCommission, commissionType);
@@ -260,7 +293,7 @@ exports.afterTransaction = (transactionId, json, vendor) => {
             obj.refundStatus = REFUND_STATUS.PENDING;
             msg = 'Transaction failed'; //'Pending transaction';
         } else {
-            msg = json?.content?.error ?? 'An error occured';
+            msg = json?.content?.error ?? 'Transaction failed';
             vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
             obj.status = TRANSACTION_STATUS.FAILED;
             obj.statusDesc = json?.response_description;
@@ -291,14 +324,37 @@ exports.afterTransaction = (transactionId, json, vendor) => {
         // obj.rawResp = json;
         if (json.code == 101) {
             obj.status = TRANSACTION_STATUS.DELIVERED;
-            obj.statusDesc = json.description.status;
-            const pinArr = json.description.PIN.split('\n');
-            obj.respObj = {
-                pins: pinArr.map(i => {
-                    const item = i.split(',');
-                    return { pin: item[0], sn: item[1] };
-                })
-            };
+            obj.statusDesc = json.description?.status ?? 'TRANSACTION SUCCESSFUL';
+            if (json.description?.PIN) { //airtime pin
+                const pinArr = json.description.PIN.split('\n');
+                obj.respObj = {
+                    pins: pinArr.map(i => {
+                        const item = i.split(',');
+                        return { pin: item[0], serial: item[1] };
+                    })
+                };
+            }
+            // if (json?.tokens) { //waec registration
+            //     obj.respObj = {
+            //         pins: json?.tokens.map(i => ({ pin: i }))
+            //     };
+            // }
+            // if (json?.Pin) { //utme
+            //     obj.respObj = {
+            //         pins: [{ pin: this.removeAllWhiteSpace(json?.Pin.split(':')[1]) }]
+            //     };
+            // }
+            // if (json?.token) { //electricity
+            //     obj.respObj = {
+            //         token: this.removeAllWhiteSpace(json?.token.split(':')[1])
+            //     };
+            // }
+            if (json?.description) { //this is just to hold the full description field
+                obj.respObj = {
+                    ...obj?.respObj,
+                    description: json?.description
+                };
+            }
             respCode = 200;
             status = 'success';
             msg = 'Downloading...';
