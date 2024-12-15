@@ -16,6 +16,9 @@ const userSchema = new mongoose.Schema({
             last: { type: String, required: true, },
         },
     },
+    telegramNumber: {
+        type: String
+    },
     role: {
         type: String
     },
@@ -62,6 +65,9 @@ const userSchema = new mongoose.Schema({
     referralBonus: {
         type: Number,
         default: 0.00,
+    },
+    fcmToken: {
+        type: String,
     },
     password: {
         type: String,

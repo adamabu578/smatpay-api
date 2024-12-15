@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const fetch = require('node-fetch');
 const randtoken = require('rand-token');
 const { uid } = require("uid");
+const firebase = require('firebase-admin');
 
 const catchAsync = require("../helpers/catchAsync");
 const Service = require("../models/service");
@@ -14,9 +15,58 @@ const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction } = require("../helpers/utils");
 const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES } = require("../helpers/consts");
+const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES, NETWORKS } = require("../helpers/consts");
 const { sendTelegramDoc } = require("./bot");
 const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
+
+const serviceAccount = require("../secret/v24u-35c94-firebase-adminsdk-uudcj-3773af88d0.json");
+const Otl = require("../models/otl");
+
+firebase.initializeApp({
+  credential: firebase.credential.cert(serviceAccount)
+});
+
+exports.test = catchAsync(async (req, res, next) => {
+  res.status(200).json([
+    {
+      "userId": 1,
+      "id": 5,
+      "title": "laboriosam mollitia et enim quasi adipisci quia provident illum",
+      "completed": false
+    },
+    {
+      "userId": 1,
+      "id": 6,
+      "title": "qui ullam ratione quibusdam voluptatem quia omnis",
+      "completed": false
+    },
+  ]
+  );
+});
+
+exports.setFCMToken = catchAsync(async (req, res, next) => {
+  console.log('setFCMToken ::: req.body', req.body);
+  const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
+  console.log(q);
+  res.status(200).json({ status: 'success', msg: 'Token updated' });
+});
+
+exports.fcmPushMsg = catchAsync(async (req, res, next) => {
+  console.log('fcmPushMsg ::: req.body', req.body);
+  const q = await User.findOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: 1 });
+  const token = q?.fcmToken;
+  // const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
+  console.log(q);
+  const message = {
+    notification: {
+      title: null,
+      body: null,
+    },
+    token,
+  };
+  firebase.messaging().send(message);
+  res.status(200).json({ status: 'success', msg: 'Message pushed' });
+});
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const isTelegram = !!req.body?.[P.telegramId];
@@ -26,6 +76,8 @@ exports.signUp = catchAsync(async (req, res, next) => {
   }
   const missing = pExCheck(req.body, params);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  req.body[P.phone] = req.body[P.phone].replace('+', ''); //in case the number starts with +
 
   const { firstName, lastName, email, phone } = req.body;
 
@@ -48,6 +100,8 @@ exports.signUp = catchAsync(async (req, res, next) => {
 
   if (!isTelegram) { //registration not through telegram
     fields.password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+  } else {
+    fields[P.telegramNumber] = phone;
   }
 
   let referrer;
@@ -66,6 +120,16 @@ exports.signUp = catchAsync(async (req, res, next) => {
   }
 });
 
+const afterLogin = (req, res, user) => {
+  const payload = { id: user._id.toHexString(), firstName: user.firstName };
+
+  const token = jwt.sign({ payload }, process.env.AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
+
+  req.session.token = token;
+
+  res.status(200).json({ status: "success", msg: "Logged in" });
+}
+
 exports.login = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.email, P.password]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
@@ -74,18 +138,89 @@ exports.login = catchAsync(async (req, res, next) => {
 
   if (!user) return next(new AppError(400, 'Invalid email and/or password'));
 
+  if (!user?.password) return res.status(403).json({ status: "error", msg: 'Password is not set.', next: 'no-password' });
+
   const isPasswordValid = bcrypt.compareSync(req.body.password, user.password);
 
   if (!isPasswordValid) return next(new AppError(400, 'Invalid email and/or password'));
 
-  const payload = { id: user._id.toHexString(), firstName: user.firstName };
-
-  const token = jwt.sign({ payload }, process.env.AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
-
-  req.session.token = token;
-
-  res.status(200).json({ status: "success", msg: "Logged in" });
+  afterLogin(req, res, user);
 });
+
+exports.getOtl = catchAsync(async (req, res, next) => { //otl = one time link
+  const field = {};
+  if (pExCheck(req.body, [P.email]).length == 0) {
+    field.name = P.email;
+    field.value = req.body[P.email];
+  } else if (pExCheck(req.body, [P.telegramId]).length == 0) {
+    field.name = P.telegramId;
+    field.value = req.body[P.telegramId];
+  } else {
+    return next(new AppError(400, `Either ${P.email} or ${P.telegramId} is required.`));
+  }
+
+  const user = await User.findOne({ [`uid.${[field.name]}`]: field.value });
+  if (!user) return next(new AppError(400, `Invalid ${field.name}`));
+
+  const token = randtoken.uid(12);
+
+  const q = await Otl.create({ uid: token, field, createdAt: new Date() });
+  if (!q) return next(new AppError(500, 'Request not successful'));
+
+  const otl = `${process.env.WEB_URL}/otl/${token}`;
+
+  const resp = field.name == P.email ? { status: 'success', msg: 'A One Time Link has been sent to your mail.' } : { status: 'success', msg: 'OTL generated.', data: { otl } }
+
+  res.status(200).json(resp);
+});
+
+exports.otlLogin = catchAsync(async (req, res, next) => {
+  const token = req.params.token;
+
+  const otl = await Otl.findOne({ uid: token });
+  if (!otl) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
+
+  const diffInMins = (new Date() - new Date(otl?.createdAt)) / (60 * 1000); //converted to minutes
+  const expiry = 10; //10 mins
+  if (otl?.isUsed == 1 || expiry - diffInMins < 0) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
+
+  const user = await User.findOne({ [`uid.${[otl.field.name]}`]: otl.field.value });
+  if (!user) return next(new AppError(400, 'Invalid account. Kindly get a new link'));
+  await Otl.updateOne({ _id: otl._id }, { isUsed: 1 });
+
+  afterLogin(req, res, user);
+});
+
+exports.sendPwdResetMail = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.email]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const payload = { email: req.body[P.email] };
+
+  const token = jwt.sign({ payload }, process.env.PRE_AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
+  console.log(token);
+
+  res.status(200).json({ status: 'success', msg: 'We have sent you a mail.' });
+});
+
+exports.setPassword = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.password, P.token]);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const { payload } = jwt.verify(req.body[P.token], process.env.PRE_AUTH_SECRET);
+
+  const user = await User.findOne({ 'uid.email': payload[P.email] });
+
+  if (!user) return next(new AppError(400, 'Invalid account'));
+
+  const password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+
+  const q = await User.updateOne({ 'uid.email': payload[P.email] }, { password });
+  if (q.modifiedCount != 1) return next(new AppError(500, 'Request not successful'));
+
+  res.status(200).json({ status: 'success', msg: 'Request successful' });
+});
+
 
 exports.logout = catchAsync(async (req, res, next) => {
   req.session.destroy();
@@ -136,7 +271,7 @@ const singleTopup = catchAsync(async (req, res, next) => {
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    res.status(respCode).json({ status, msg });
+    res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, options);
   });
 });
@@ -192,6 +327,10 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.query, [P.provider]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
+  req.query[P.provider] = req.query[P.provider].toUpperCase();
+
+  if (!NETWORKS?.[req.query[P.provider]]) return next(new AppError(400, 'Invalid provider.'));
+
   const type = req.query?.type == 'sme' ? '-sme-' : '-';
 
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}${type}data`, {
@@ -205,13 +344,27 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
 });
 
 exports.subData = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.bundleCode]);
+  const missing = pExCheck(req.body, [P.provider, P.recipient, P.bundleCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  if (!NETWORKS?.[req.body[P.provider].toUpperCase()]) return next(new AppError(400, 'Invalid provider.'));
+
+  const type = req.query?.type == 'sme' ? '-sme' : '';
 
   req.body[P.provider] = req.body[P.provider].toLowerCase();
 
-  const service = await Service.findOne({ code: `data-${req.body[P.provider]}` });
-  if (!service) return next(new AppError(500, 'Service error'));
+  const serviceCode = `data-${req.body[P.provider]}${type}`;
+
+  const service = await Service.findOne({ code: serviceCode });
+  if (!service) return next(new AppError(500, 'Invalid service'));
+
+  const variations = await getVariations(service?.vendorCode);
+  if (!variations) return next(new AppError(400, 'Cannot list bundles.'));
+  const variationAmount = getVariationAmtFromVTPass(variations, req.body[P.bundleCode]);
+  // const variationAmount = getVariationAmtFromVTPass(json, service?.vendorVariationCode);
+  if (!variationAmount) return next(new AppError(400, 'Invalid bundle code'));
+  // const amount = calcServicePrice(service, { vendorPrice: variationAmount });
+  req.body[P.amount] = variationAmount;
 
   // req.body[P.serviceId] = service._id;
   // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
@@ -223,16 +376,18 @@ exports.subData = catchAsync(async (req, res, next) => {
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
       body: JSON.stringify({
         request_id: transactionId,
-        serviceID: `${req.body[P.provider]}-data`,
+        serviceID: service.vendorCode,
         billersCode: req.body[P.recipient],
         variation_code: req.body[P.bundleCode],
-        amount: req.body[P.amount],
+        // amount: req.body[P.amount],
         phone: req.body[P.recipient]
       }),
     });
+    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
+    console.log('json :::', json);
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    res.status(respCode).json({ status, msg });
+    res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, req.user.id);
   });
 });
@@ -478,15 +633,15 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
   });
 });
 
-const getVariations = async (vendorCode, next) => {
+const getVariations = async (vendorCode) => {
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   // console.log('getVariations ::: resp.status :::', resp.status);
   const json = await resp.json();
   // console.log('getVariations ::: json :::', json);
-  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list variations.'));
-  return json;
+  if (json?.response_description != '000') return null; //return next(new AppError(400, 'Cannot list variations.'));
+  return json?.content?.variations ?? json?.content?.varations;
 }
 
 exports.previewExamPIN = catchAsync(async (req, res, next) => {
@@ -495,11 +650,10 @@ exports.previewExamPIN = catchAsync(async (req, res, next) => {
 
   const service = await Service.findOne({ code: req.params[P.serviceCode] });
   if (!service) return next(new AppError(500, 'Invalid service'));
-  // console.log('previewExamPIN ::: service :::', service);
 
-  const json = await getVariations(service?.vendorCode, next);
-  // console.log('previewExamPIN ::: json :::', json);
-  const variations = json?.content?.variations ?? json?.content?.varations;
+  const variations = await getVariations(service?.vendorCode);
+  if (!variations) return next(new AppError(400, 'Cannot list variations.'));
+  // const variations = json?.content?.variations ?? json?.content?.varations;
   const pin = (variations?.filter(i => i?.variation_code == service?.vendorVariationCode))[0];
   // console.log('previewExamPIN ::: pin :::', pin);
 
@@ -541,8 +695,9 @@ exports.verifyExamInput = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: 'success', msg: 'Verified details', data: json?.content });
 });
 
-const getVariationAmtFromVTPassJsonResp = (json, variationCode) => {
-  const variation = (json?.content?.variations ?? json?.content?.varations)?.filter(i => i?.variation_code == variationCode)[0];
+const getVariationAmtFromVTPass = (variations, variationCode) => {
+  // const variation = (json?.content?.variations ?? json?.content?.varations)?.filter(i => i?.variation_code == variationCode)[0];
+  const variation = variations?.filter(i => i?.variation_code == variationCode)[0];
   return variation?.variation_amount;
 }
 
@@ -555,9 +710,11 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   const service = await Service.findOne({ code: req.body[P.serviceCode] });
   if (!service) return next(new AppError(500, 'Invalid service type'));
 
-  const json = await getVariations(service?.vendorCode, next);
-  // const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
-  const variationAmount = getVariationAmtFromVTPassJsonResp(json, service?.vendorVariationCode);
+  const variations = await getVariations(service?.vendorCode);
+  if (!variations) return next(new AppError(400, 'Cannot list variations.'));
+
+  // const varationAmount = getVariationAmtFromVTPass(json, req.body[P.variationCode]);
+  const variationAmount = getVariationAmtFromVTPass(variations, service?.vendorVariationCode);
   if (!variationAmount) return next(new AppError(400, 'Invalid variation code'));
   const amount = calcServicePrice(service, { vendorPrice: variationAmount });
 
@@ -570,29 +727,47 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
   initTransaction(req, service, next, async (transactionId, options) => {
-    const body = {
-      request_id: transactionId,
-      serviceID: service.vendorCode,
-      // variation_code: req.body[P.variationCode],
-      variation_code: service?.vendorVariationCode,
-      quantity: req.body[P.quantity],
-      phone: req.body[P.recipient]
-    };
-    if (req.body?.[P.profileCode]) { //case of utme
-      body.billersCode = req.body[P.profileCode];
-    }
-    console.log('buyExamPIN ::: body :::', body);
-    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    const resp = await fetch(`${process.env.EPIN_API}/waec/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apikey: process.env.EPIN_KEY,
+        service: "waec",
+        vcode: 'waecdirect',
+        // amount:
+        ref: transactionId
+      }),
     });
-    // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
+    console.log('buyExamPIN ::: resp.status :::', resp.status);
     const json = await resp.json();
-    // console.log('buyExamPIN ::: json :::', json);
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    console.log('buyExamPIN ::: json :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
+
+    // const body = {
+    //   request_id: transactionId,
+    //   serviceID: service.vendorCode,
+    //   // variation_code: req.body[P.variationCode],
+    //   variation_code: service?.vendorVariationCode,
+    //   quantity: req.body[P.quantity],
+    //   phone: req.body[P.recipient]
+    // };
+    // if (req.body?.[P.profileCode]) { //case of utme
+    //   body.billersCode = req.body[P.profileCode];
+    // }
+    // console.log('buyExamPIN ::: body :::', body);
+    // const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+    //   body: JSON.stringify(body),
+    // });
+    // // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    // const json = await resp.json();
+    // // console.log('buyExamPIN ::: json :::', json);
+    // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+
     updateTransaction(obj, options);
-    let jsonResp = { status, msg }; 
+    let jsonResp = { status, msg };
     if (obj?.respObj) {
       let fileName = `${service.title} [${req.body[P.quantity]}]`;
       if (format == 'pdf') {
@@ -775,8 +950,10 @@ exports.purchaseElectricity = catchAsync(async (req, res, next) => {
   console.log('service', service);
   if (!service) return next(new AppError(500, 'Invalid provider'));
 
-  // const json = await getVariations(service?.vendorCode, next);
-  // const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
+  // const variations = await getVariations(service?.vendorCode);
+  // if(!variations) return next(new AppError(400, 'Cannot list variations.'));
+
+  // const varationAmount = getVariationAmtFromVTPass(variations, req.body[P.variationCode]);
   // if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
   // const amount = calcServicePrice(service, { vendorPrice: varationAmount });
 
