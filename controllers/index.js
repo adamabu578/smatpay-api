@@ -77,6 +77,8 @@ exports.signUp = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, params);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
+  req.body[P.phone] = req.body[P.phone].replace('+', ''); //in case the number starts with +
+
   const { firstName, lastName, email, phone } = req.body;
 
   const filter = [{ 'uid.email': email }, { 'uid.phone': phone }];
@@ -98,6 +100,8 @@ exports.signUp = catchAsync(async (req, res, next) => {
 
   if (!isTelegram) { //registration not through telegram
     fields.password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
+  } else {
+    fields[P.telegramNumber] = phone;
   }
 
   let referrer;
@@ -325,7 +329,7 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
 
   req.query[P.provider] = req.query[P.provider].toUpperCase();
 
-  if(!NETWORKS?.[req.query[P.provider]]) return next(new AppError(400, 'Invalid provider.'));
+  if (!NETWORKS?.[req.query[P.provider]]) return next(new AppError(400, 'Invalid provider.'));
 
   const type = req.query?.type == 'sme' ? '-sme-' : '-';
 
@@ -340,13 +344,27 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
 });
 
 exports.subData = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount, P.bundleCode]);
+  const missing = pExCheck(req.body, [P.provider, P.recipient, P.bundleCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  if (!NETWORKS?.[req.body[P.provider].toUpperCase()]) return next(new AppError(400, 'Invalid provider.'));
+
+  const type = req.query?.type == 'sme' ? '-sme' : '';
 
   req.body[P.provider] = req.body[P.provider].toLowerCase();
 
-  const service = await Service.findOne({ code: `data-${req.body[P.provider]}` });
-  if (!service) return next(new AppError(500, 'Service error'));
+  const serviceCode = `data-${req.body[P.provider]}${type}`;
+
+  const service = await Service.findOne({ code: serviceCode });
+  if (!service) return next(new AppError(500, 'Invalid service'));
+
+  const variations = await getVariations(service?.vendorCode);
+  if (!variations) return next(new AppError(400, 'Cannot list bundles.'));
+  const variationAmount = getVariationAmtFromVTPass(variations, req.body[P.bundleCode]);
+  // const variationAmount = getVariationAmtFromVTPass(json, service?.vendorVariationCode);
+  if (!variationAmount) return next(new AppError(400, 'Invalid bundle code'));
+  // const amount = calcServicePrice(service, { vendorPrice: variationAmount });
+  req.body[P.amount] = variationAmount;
 
   // req.body[P.serviceId] = service._id;
   // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
@@ -358,16 +376,18 @@ exports.subData = catchAsync(async (req, res, next) => {
       headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
       body: JSON.stringify({
         request_id: transactionId,
-        serviceID: `${req.body[P.provider]}-data`,
+        serviceID: service.vendorCode,
         billersCode: req.body[P.recipient],
         variation_code: req.body[P.bundleCode],
-        amount: req.body[P.amount],
+        // amount: req.body[P.amount],
         phone: req.body[P.recipient]
       }),
     });
+    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
+    console.log('json :::', json);
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    res.status(respCode).json({ status, msg });
+    res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, req.user.id);
   });
 });
@@ -613,15 +633,15 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
   });
 });
 
-const getVariations = async (vendorCode, next) => {
+const getVariations = async (vendorCode) => {
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   // console.log('getVariations ::: resp.status :::', resp.status);
   const json = await resp.json();
   // console.log('getVariations ::: json :::', json);
-  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list variations.'));
-  return json;
+  if (json?.response_description != '000') return null; //return next(new AppError(400, 'Cannot list variations.'));
+  return json?.content?.variations ?? json?.content?.varations;
 }
 
 exports.previewExamPIN = catchAsync(async (req, res, next) => {
@@ -630,11 +650,10 @@ exports.previewExamPIN = catchAsync(async (req, res, next) => {
 
   const service = await Service.findOne({ code: req.params[P.serviceCode] });
   if (!service) return next(new AppError(500, 'Invalid service'));
-  // console.log('previewExamPIN ::: service :::', service);
 
-  const json = await getVariations(service?.vendorCode, next);
-  // console.log('previewExamPIN ::: json :::', json);
-  const variations = json?.content?.variations ?? json?.content?.varations;
+  const variations = await getVariations(service?.vendorCode);
+  if (!variations) return next(new AppError(400, 'Cannot list variations.'));
+  // const variations = json?.content?.variations ?? json?.content?.varations;
   const pin = (variations?.filter(i => i?.variation_code == service?.vendorVariationCode))[0];
   // console.log('previewExamPIN ::: pin :::', pin);
 
@@ -676,8 +695,9 @@ exports.verifyExamInput = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: 'success', msg: 'Verified details', data: json?.content });
 });
 
-const getVariationAmtFromVTPassJsonResp = (json, variationCode) => {
-  const variation = (json?.content?.variations ?? json?.content?.varations)?.filter(i => i?.variation_code == variationCode)[0];
+const getVariationAmtFromVTPass = (variations, variationCode) => {
+  // const variation = (json?.content?.variations ?? json?.content?.varations)?.filter(i => i?.variation_code == variationCode)[0];
+  const variation = variations?.filter(i => i?.variation_code == variationCode)[0];
   return variation?.variation_amount;
 }
 
@@ -690,9 +710,11 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   const service = await Service.findOne({ code: req.body[P.serviceCode] });
   if (!service) return next(new AppError(500, 'Invalid service type'));
 
-  const json = await getVariations(service?.vendorCode, next);
-  // const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
-  const variationAmount = getVariationAmtFromVTPassJsonResp(json, service?.vendorVariationCode);
+  const variations = await getVariations(service?.vendorCode);
+  if (!variations) return next(new AppError(400, 'Cannot list variations.'));
+
+  // const varationAmount = getVariationAmtFromVTPass(json, req.body[P.variationCode]);
+  const variationAmount = getVariationAmtFromVTPass(variations, service?.vendorVariationCode);
   if (!variationAmount) return next(new AppError(400, 'Invalid variation code'));
   const amount = calcServicePrice(service, { vendorPrice: variationAmount });
 
@@ -928,8 +950,10 @@ exports.purchaseElectricity = catchAsync(async (req, res, next) => {
   console.log('service', service);
   if (!service) return next(new AppError(500, 'Invalid provider'));
 
-  // const json = await getVariations(service?.vendorCode, next);
-  // const varationAmount = getVariationAmtFromVTPassJsonResp(json, req.body[P.variationCode]);
+  // const variations = await getVariations(service?.vendorCode);
+  // if(!variations) return next(new AppError(400, 'Cannot list variations.'));
+
+  // const varationAmount = getVariationAmtFromVTPass(variations, req.body[P.variationCode]);
   // if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
   // const amount = calcServicePrice(service, { vendorPrice: varationAmount });
 

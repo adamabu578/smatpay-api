@@ -43,7 +43,10 @@ const menuActions = {
   },
   createAccount: async (msg, session) => {
     console.log('contact :::', msg?.contact);
-    const obj = { firstName: msg.from?.first_name, lastName: msg.from?.last_name ?? msg.from?.username, email: session.options.email, phone: session.options.phone, telegramId: msg.from.id };
+    if (!msg?.contact) return 'Please try again. Kindly use the confirm button.'; //if phone number is typed in instead of clicking the button
+
+    // const obj = { firstName: msg.from?.first_name, lastName: msg.from?.last_name ?? msg.from?.username, email: session.options.email, phone: session.options.phone, telegramId: msg.from.id };
+    const obj = { firstName: msg.contact?.first_name, lastName: msg.contact?.last_name ?? msg.contact?.username, email: session.options.email, phone: msg.contact?.phone_number, telegramId: msg.contact?.user_id };
     const sessions = await Session.find({ $and: [{ telegramId: msg.from.id }, { startParams: { $ne: null } }] }); //look for all sessions with startParams incase the user was referred
     if (sessions.length != 0) { //user was referred
       obj.referralCode = sessions[0].startParams; //first occurence of the user session 
@@ -54,7 +57,8 @@ const menuActions = {
       body: JSON.stringify(obj),
     });
     const json = await resp.json();
-    return json?.msg;
+    if (json.status != 'success') return json?.msg;
+    return 'Account created. Kindly click on the menu button for the list of services';
   },
   airtime: async (msg, q) => {
     const resp = await fetch(`${process.env.BASE_URL}/airtime/vtu`, {
@@ -621,12 +625,12 @@ const menus = [
   {
     key: '_createAccount',
     steps: [{ msg: 'Enter email', key: 'email', value: (input) => input }, {
-      msg: 'Enter phone number', key: 'phone', value: (input) => input, replyOption: {
-        parse_mode: "Markdown",
+      msg: 'Kindly confirm your phone number', key: 'contact', value: (input) => input, replyOption: {
+        // parse_mode: "Markdown",
         reply_markup: JSON.stringify({
           keyboard: [
             // [{ text: "Location", request_location: true }],
-            [{ text: "Click to Share Contact", request_contact: true }]
+            [{ text: "Click here to confirm", request_contact: true }]
           ],
           one_time_keyboard: true
         })
@@ -718,7 +722,7 @@ const closeSession = async (_id) => {
 }
 
 const botProcess = async (msg, q, serviceKey) => {
-  const input = msg.text;
+  const input = msg?.text ?? msg?.contact; //just this two cases for now: text or contact
   let menuIndex = 0;
   if (!q) {
     const obj = { options: { service: serviceKey } }; //menu option
@@ -726,7 +730,7 @@ const botProcess = async (msg, q, serviceKey) => {
       obj.user = msg.from._id;
     } else { //new user
       obj.telegramId = msg.from.id;
-      if (msg.text?.startsWith('/start')) { //case when parameter is passed
+      if (input?.startsWith('/start')) { //case when parameter is passed e.g for referral
         const words = msg.text.split(' ');
         obj.startParams = words[1];
       }
@@ -774,15 +778,19 @@ const botProcess = async (msg, q, serviceKey) => {
     await Session.updateOne({ _id: q._id }, { options: { ...q.options, ...update }, isClosed });
   }
 
-  const replyOption = menu?.replyOption ?? {};
-  if (menu?.msg) {
-    await bot.sendMessage(msg.chat.id, menu.msg, replyOption); //respond with the message in the menu step
-  } else if (menu?.action) {
+  const replyOption = menu?.replyOption ?? {
+    reply_markup: JSON.stringify({
+      remove_keyboard: true
+    })
+  };
+  if (menu?.msg) { //respond with the message in the menu step if any
+    await bot.sendMessage(msg.chat.id, menu.msg, replyOption);
+  } else if (menu?.action) { //perform the action in the step instead
     const session = await Session.findOne({ _id: q._id });
     if (menu?.nextMsg) {
       session.nextMsg = menu?.nextMsg; //in case there is a specific message that should be displayed next in the response
     }
-    const resp = await menuActions[menu?.action](msg, session); //calling the function in the menu step
+    const resp = await menuActions[menu?.action](msg, session); //calling the action function in the menu step
     if (resp) {//if the step function has a response
       await bot.sendMessage(msg.chat.id, resp, replyOption);
     }
@@ -819,7 +827,7 @@ bot.on('message', async msg => {
         botProcess(msg, null, MENU_STEPS._welcome);
       }
     } else if (!q2) {
-      console.log('Case 3 :::', msg);
+      console.log('Case 3 :::');
       let serviceKey;
       if (isNaN(msg.text) && msg.text?.startsWith('/')) { //A command is entered e.g /airtime
         serviceKey = menus.filter(i => i.command == msg.text.replace('/', ''))[0]?.key;

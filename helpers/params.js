@@ -4,6 +4,7 @@ module.exports = {
     email: 'email',
     phone: 'phone',
     telegramId: 'telegramId',
+    telegramNumber: 'telegramNumber',
     password: 'password',
 
     provider: 'provider',

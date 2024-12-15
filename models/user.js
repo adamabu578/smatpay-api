@@ -16,6 +16,9 @@ const userSchema = new mongoose.Schema({
             last: { type: String, required: true, },
         },
     },
+    telegramNumber: {
+        type: String
+    },
     role: {
         type: String
     },
