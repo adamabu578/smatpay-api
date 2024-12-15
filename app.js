@@ -55,7 +55,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(session(sessOption));
 app.use(cors(corsOptions));
 
-const prefix = process.env.NODE_ENV != 'development' ? 'v24u' : 'v24u/dev';
+const prefix = process.env.NODE_ENV != 'development' ? 'v24u' : 'v24u/sandbox';
 
 app.use(`/${prefix}`, router);
 
