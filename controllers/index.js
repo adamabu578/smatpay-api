@@ -121,11 +121,12 @@ exports.signUp = catchAsync(async (req, res, next) => {
 });
 
 const afterLogin = (req, res, user) => {
-  const payload = { id: user._id.toHexString(), firstName: user.firstName };
+  const payload = { id: user._id.toHexString(), firstName: user?.firstName ?? '' };
 
   const token = jwt.sign({ payload }, process.env.AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
 
   req.session.token = token;
+  // console.log(user);
 
   res.status(200).json({ status: "success", msg: "Logged in" });
 }
@@ -182,7 +183,7 @@ exports.otlLogin = catchAsync(async (req, res, next) => {
 
   const diffInMins = (new Date() - new Date(otl?.createdAt)) / (60 * 1000); //converted to minutes
   const expiry = 10; //10 mins
-  if (otl?.isUsed == 1 || expiry - diffInMins < 0) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
+  // if (otl?.isUsed == 1 || expiry - diffInMins < 0) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
 
   const user = await User.findOne({ [`uid.${[otl.field.name]}`]: otl.field.value });
   if (!user) return next(new AppError(400, 'Invalid account. Kindly get a new link'));

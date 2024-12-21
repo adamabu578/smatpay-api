@@ -28,7 +28,8 @@ const sessOption = {
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV != 'development',
-    // maxAge: 72 * 60 * 60 * 1000, //3 days
+    maxAge: 72 * 60 * 60 * 1000, //3 days
+    // domain:'localhost:5173',
   },
   resave: false,
   saveUninitialized: false,
@@ -40,12 +41,12 @@ const sessOption = {
   }),
 };
 
-if (process.env.NODE_ENV != 'development') {
+// if (process.env.NODE_ENV != 'development') {
   sessOption.cookie.sameSite = 'none';
-}
+// }
 
 const corsOptions = {
-  origin: ['http://localhost:3000'],
+  origin: process.env.NODE_ENV == 'development' ? ['http://localhost:5173'] : ['https://v24u.com'],
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };

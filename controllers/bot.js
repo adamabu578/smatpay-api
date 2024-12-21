@@ -42,7 +42,6 @@ const menuActions = {
     await botProcess(msg, q, q.options.service);
   },
   createAccount: async (msg, session) => {
-    console.log('contact :::', msg?.contact);
     if (!msg?.contact) return 'Please try again. Kindly use the confirm button.'; //if phone number is typed in instead of clicking the button
 
     // const obj = { firstName: msg.from?.first_name, lastName: msg.from?.last_name ?? msg.from?.username, email: session.options.email, phone: session.options.phone, telegramId: msg.from.id };
@@ -70,11 +69,14 @@ const menuActions = {
     return json?.msg;
   },
   listDataBundle: async (msg, q) => {
+    console.log('MSG :::', msg);
     try {
       const resp = await fetch(`${process.env.BASE_URL}/data/bundles?provider=${q?.options?.provider.toLowerCase()}`, {
         headers: { 'Authorization': `Bearer ${msg.from.key}` },
       });
+      console.log('resp.status :::', resp.status);
       const json = await resp.json();
+      console.log('JSON :::', json);
       await Session.updateOne({ _id: q._id }, { data: { ...q.data, bundles: json.data } });
       let str = 'Select bundle\n';
       for (let i = 0; i < json.data.length; i++) {
@@ -82,6 +84,7 @@ const menuActions = {
       }
       return str;
     } catch (error) {
+      console.log('ERROR :::', error);
       return 'An error occured';
     }
   },
@@ -807,7 +810,7 @@ bot.on('message', async msg => {
 
     if (user.length == 1) { //User already exist
       msg.from._id = user[0]._id; //add user ID to the from object
-      msg.from.key = user[0].liveKey; //add user live key to the from object
+      msg.from.key = process.env.NODE_ENV == 'development' ? user[0].testKey : user[0].liveKey; //add user key to the from object
       query.user = user[0]._id; //also add user ID to the query object
     } else {
       query.telegramId = msg.from.id; //add user's telegramId to the query object. for first time user yet to be registered
