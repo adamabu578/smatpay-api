@@ -69,6 +69,9 @@ const userSchema = new mongoose.Schema({
     fcmToken: {
         type: String,
     },
+    canTestBot:{
+        type: String,
+    },
     password: {
         type: String,
     },

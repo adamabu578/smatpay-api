@@ -801,10 +801,13 @@ const botProcess = async (msg, q, serviceKey) => {
 }
 
 bot.on('message', async msg => {
-  if (process.env.NODE_ENV == 'development' && msg.from.id != process.env.TELEGRAM_BOT_DEV_USER) {
+  const user = await User.find({ 'uid.telegramId': msg.from.id });
+
+  // if (process.env.NODE_ENV == 'development' && msg.from.id != process.env.TELEGRAM_BOT_DEV_USER) {
+  if (process.env.NODE_ENV == 'development' && user[0]?.canTestBot != 'yes') {
     bot.sendMessage(msg.chat.id, `Sorry we have moved to ${process.env.TELEGRAM_BOT_LIVE_LINK}`);
   } else {
-    const user = await User.find({ 'uid.telegramId': msg.from.id });
+    // const user = await User.find({ 'uid.telegramId': msg.from.id });
 
     const query = { isClosed: 0 };
 
