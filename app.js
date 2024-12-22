@@ -31,6 +31,7 @@ const sessOption = {
     // sameSite: 'none',
     // maxAge: 72 * 60 * 60 * 1000, //3 days
     // domain: 'localhost',
+    maxAge: 72 * 60 * 60 * 1000, //3 days
   },
   resave: false,
   saveUninitialized: false,
