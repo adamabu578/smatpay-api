@@ -61,7 +61,7 @@ const menuActions = {
     return 'Account created. Kindly click on the menu button for the list of services';
   },
   airtime: async (msg, q) => {
-    const resp = await fetch(`${process.env.BASE_URL}/airtime/vtu`, {
+    const resp = await fetch(`${process.env.BASE_URL}/vtu/airtime`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
       body: JSON.stringify({ provider: q.options.provider, recipient: q.options.recipient, amount: q.options.amount }),

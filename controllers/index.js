@@ -348,11 +348,11 @@ exports.subData = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.bundleCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  req.query[P.provider] = NETWORKS?.[req.query[P.provider].toUpperCase()];
+  req.body[P.provider] = NETWORKS?.[req.body[P.provider].toUpperCase()];
 
-  if (!req.query[P.provider]) return next(new AppError(400, 'Invalid provider.'));
+  if (!req.body[P.provider]) return next(new AppError(400, 'Invalid provider.'));
 
-  const type = req.query?.type == 'sme' ? '-sme' : '';
+  const type = req.body?.type == 'sme' ? '-sme' : '';
 
   req.body[P.provider] = req.body[P.provider].toLowerCase();
 
@@ -388,7 +388,6 @@ exports.subData = catchAsync(async (req, res, next) => {
     });
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
-    console.log('json :::', json);
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
     res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, req.user.id);
