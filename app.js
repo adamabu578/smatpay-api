@@ -24,10 +24,10 @@ const app = express();
 
 const sessOption = {
   secret: process.env.SESSION_SECRET,
-  proxy: process.env.NODE_ENV != 'development',
+  proxy:  true, //process.env.NODE_ENV != 'development',
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV != 'development',
+    secure: true, //process.env.NODE_ENV != 'development',
     // sameSite: 'none',
     // maxAge: 72 * 60 * 60 * 1000, //3 days
     // domain: 'localhost',
@@ -43,12 +43,12 @@ const sessOption = {
   }),
 };
 
-if (process.env.NODE_ENV != 'development') {
+// if (process.env.NODE_ENV != 'development') {
   sessOption.cookie.sameSite = 'none';
-}
+// }
 
 const corsOptions = {
-  origin: process.env.NODE_ENV == 'development' ? ['http://localhost:5173'] : ['https://v24u.com'],
+  origin: process.env.CORS_ORIGINS.split(','), //process.env.NODE_ENV == 'development' ? ['http://localhost:5173'] : ['https://v24u.com'],
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
@@ -58,13 +58,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(session(sessOption));
 app.use(cors(corsOptions));
 
-const prefix = process.env.NODE_ENV != 'development' ? 'v24u' : 'v24u/sandbox';
+const prefix = process.env.PATH_PREFIX; //process.env.NODE_ENV != 'development' ? 'v24u' : 'v24u/sandbox';
 
 app.use(`/${prefix}`, router);
 
 app.use(globalErrorHandler);
 
-const port = process.env.NODE_ENV != 'development' ? 3003 : 3004;
+const port = process.env.PORT; //process.env.NODE_ENV != 'development' ? 3003 : 3004;
 app.listen(port, () => {
   console.log(`Running on port: ${port}`);
 })
