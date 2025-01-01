@@ -327,14 +327,15 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.query, [P.provider]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  req.query[P.provider] = req.query[P.provider].toUpperCase();
+  req.query[P.provider] = NETWORKS?.[req.query[P.provider].toUpperCase()];
 
-  if (!NETWORKS?.[req.query[P.provider]]) return next(new AppError(400, 'Invalid provider.'));
+  if (!req.query[P.provider]) return next(new AppError(400, 'Invalid provider.'));
+
+  req.query[P.provider] = req.query[P.provider].toLowerCase();
 
   const type = req.query?.type == 'sme' ? '-sme-' : '-';
 
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}${type}data`, {
-    // headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
   const json = await resp.json();
@@ -347,9 +348,11 @@ exports.subData = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.bundleCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  if (!NETWORKS?.[req.body[P.provider].toUpperCase()]) return next(new AppError(400, 'Invalid provider.'));
+  req.body[P.provider] = NETWORKS?.[req.body[P.provider].toUpperCase()];
 
-  const type = req.query?.type == 'sme' ? '-sme' : '';
+  if (!req.body[P.provider]) return next(new AppError(400, 'Invalid provider.'));
+
+  const type = req.body?.type == 'sme' ? '-sme' : '';
 
   req.body[P.provider] = req.body[P.provider].toLowerCase();
 
@@ -385,7 +388,6 @@ exports.subData = catchAsync(async (req, res, next) => {
     });
     if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
     const json = await resp.json();
-    console.log('json :::', json);
     const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
     res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, req.user.id);
