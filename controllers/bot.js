@@ -60,7 +60,7 @@ const menuActions = {
     return 'Account created. Kindly click on the menu button for the list of services';
   },
   airtime: async (msg, q) => {
-    const resp = await fetch(`${process.env.BASE_URL}/airtime/vtu`, {
+    const resp = await fetch(`${process.env.BASE_URL}/vtu/airtime`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${msg.from.key}` },
       body: JSON.stringify({ provider: q.options.provider, recipient: q.options.recipient, amount: q.options.amount }),
@@ -801,10 +801,13 @@ const botProcess = async (msg, q, serviceKey) => {
 }
 
 bot.on('message', async msg => {
-  if (process.env.NODE_ENV == 'development' && msg.from.id != process.env.TELEGRAM_BOT_DEV_USER) {
+  const user = await User.find({ 'uid.telegramId': msg.from.id });
+
+  // if (process.env.NODE_ENV == 'development' && msg.from.id != process.env.TELEGRAM_BOT_DEV_USER) {
+  if (process.env.NODE_ENV == 'development' && user[0]?.canTestBot != 'yes') {
     bot.sendMessage(msg.chat.id, `Sorry we have moved to ${process.env.TELEGRAM_BOT_LIVE_LINK}`);
   } else {
-    const user = await User.find({ 'uid.telegramId': msg.from.id });
+    // const user = await User.find({ 'uid.telegramId': msg.from.id });
 
     const query = { isClosed: 0 };
 
