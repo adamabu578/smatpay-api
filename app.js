@@ -24,10 +24,10 @@ const app = express();
 
 const sessOption = {
   secret: process.env.SESSION_SECRET,
-  proxy:  true, //process.env.NODE_ENV != 'development',
+  proxy: true,
   cookie: {
     httpOnly: true,
-    secure: true, //process.env.NODE_ENV != 'development',
+    secure: process.env.COOKIE_SECURE == 1,
     sameSite: process.env.COOKIE_SAME_SITE,
     // maxAge: 72 * 60 * 60 * 1000, //3 days
     // domain: 'localhost',
@@ -43,12 +43,8 @@ const sessOption = {
   }),
 };
 
-// if (process.env.NODE_ENV != 'development') {
-  // sessOption.cookie.sameSite = 'none';
-// }
-
 const corsOptions = {
-  origin: process.env.CORS_ORIGINS.split(','), //process.env.NODE_ENV == 'development' ? ['http://localhost:5173'] : ['https://v24u.com'],
+  origin: process.env.CORS_ORIGINS.split(','),
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
