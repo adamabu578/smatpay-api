@@ -26,6 +26,11 @@ firebase.initializeApp({
   credential: firebase.credential.cert(serviceAccount)
 });
 
+exports.paystackWebhook = catchAsync(async (req, res, next) => {
+  res.sendStatus(200);
+  console.log('paystackWebhook', req.body);
+});
+
 exports.test = catchAsync(async (req, res, next) => {
   res.status(200).json([
     {
@@ -636,12 +641,13 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
 });
 
 const getVariations = async (vendorCode) => {
+  console.log('getVariations ::: vendorCode :::', vendorCode);
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
-  // console.log('getVariations ::: resp.status :::', resp.status);
+  console.log('getVariations ::: resp.status :::', resp.status);
   const json = await resp.json();
-  // console.log('getVariations ::: json :::', json);
+  console.log('getVariations ::: json :::', json);
   if (json?.response_description != '000') return null; //return next(new AppError(400, 'Cannot list variations.'));
   return json?.content?.variations ?? json?.content?.varations;
 }
@@ -651,9 +657,11 @@ exports.previewExamPIN = catchAsync(async (req, res, next) => {
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   const service = await Service.findOne({ code: req.params[P.serviceCode] });
+  console.log('previewExamPIN :::', 'service :::', service);
   if (!service) return next(new AppError(500, 'Invalid service'));
 
   const variations = await getVariations(service?.vendorCode);
+  console.log('variations :::', variations);
   if (!variations) return next(new AppError(400, 'Cannot list variations.'));
   // const variations = json?.content?.variations ?? json?.content?.varations;
   const pin = (variations?.filter(i => i?.variation_code == service?.vendorVariationCode))[0];
