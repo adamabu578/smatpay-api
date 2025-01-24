@@ -78,7 +78,7 @@ exports.sendEmail = async (email, subject, body, callback) => {
             transporter.sendMail(fields)
                 .then(callback);
         } else {
-           return await transporter.sendMail(fields);
+            return await transporter.sendMail(fields);
         }
         // console.log('email sent sucessfully');
     } catch (error) {
@@ -391,8 +391,8 @@ exports.createPDF = async (filename, html) => {
 
 exports.genHTMLTemplate = (template, nameOnCard, pinsArr) => {
     let html = '';
-    if (template == '100-200-airtime') {
-        html = `<!DOCTYPE html>
+    // if (template == '100-200-airtime') {
+    html = `<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
@@ -440,8 +440,8 @@ exports.genHTMLTemplate = (template, nameOnCard, pinsArr) => {
             </head>
             <body>
                 <div id="row">`;
-        for (let i = 0; i < pinsArr.length; i++) {
-            html += `<div class="card">
+    for (let i = 0; i < pinsArr.length; i++) {
+        html += `<div class="card">
                         <div class="top">
                             <span>${nameOnCard}</span>
                             <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
@@ -450,76 +450,77 @@ exports.genHTMLTemplate = (template, nameOnCard, pinsArr) => {
                         <p style="font-size:12px;">S/N ${pinsArr[i].sn}</p>
                         <p class="info">Dial *311*${pinsArr[i].pin}#</p>
                     </div>`;
-        }
-        html += `</div>
-            </body>
-        </html>`;
-    } else if (template == '500-1000-airtime') {
-        html = `<!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Document</title>
-                <style>
-                    body {
-                        margin: 0;
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    }
-            
-                    p,
-                    span {
-                        margin: 0;
-                        font-size: 12px;
-                    }
-            
-                    #row {
-                        display: flex;
-                        flex-wrap: wrap;
-                    }
-            
-                    .card {
-                        width: 336px;
-                        border-bottom: 0.5px dashed black;
-                        border-right: 0.5px dashed black;
-                        padding: 10px;
-                        padding-left: 50px;
-                    }
-            
-                    .top {
-                        display: flex;
-                        justify-content: space-between;
-                    }
-            
-                    .info {
-                        font-size: 10px;
-                        font-weight: 200;
-                    }
-            
-                    span.bold {
-                        font-weight: 800;
-                    }
-                    .vSpace {
-                        margin-bottom:4px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div id="row">`;
-        for (let i = 0; i < pinsArr.length; i++) {
-            html += `<div class="card">
-                        <div class="top vSpace">
-                            <span>${nameOnCard}</span>
-                            <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
-                        </div>
-                        <p class="vSpace">PIN <span class="bold">${pinsArr[i].pin}</span></p>
-                        <p style="font-size:12px;" class="vSpace">S/N ${pinsArr[i].sn}</p>
-                        <p class="info">Dial *311*${pinsArr[i].pin}#</p>
-                    </div>`;
-        }
-        html += `</div>
-            </body>
-        </html>`;
     }
+    html += `</div>
+            </body>
+        </html>`;
+    // } 
+    // else if (template == '500-1000-airtime') {
+    //     html = `<!DOCTYPE html>
+    //         <html lang="en">
+    //         <head>
+    //             <meta charset="UTF-8">
+    //             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    //             <title>Document</title>
+    //             <style>
+    //                 body {
+    //                     margin: 0;
+    //                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    //                 }
+
+    //                 p,
+    //                 span {
+    //                     margin: 0;
+    //                     font-size: 12px;
+    //                 }
+
+    //                 #row {
+    //                     display: flex;
+    //                     flex-wrap: wrap;
+    //                 }
+
+    //                 .card {
+    //                     width: 336px;
+    //                     border-bottom: 0.5px dashed black;
+    //                     border-right: 0.5px dashed black;
+    //                     padding: 10px;
+    //                     padding-left: 50px;
+    //                 }
+
+    //                 .top {
+    //                     display: flex;
+    //                     justify-content: space-between;
+    //                 }
+
+    //                 .info {
+    //                     font-size: 10px;
+    //                     font-weight: 200;
+    //                 }
+
+    //                 span.bold {
+    //                     font-weight: 800;
+    //                 }
+    //                 .vSpace {
+    //                     margin-bottom:4px;
+    //                 }
+    //             </style>
+    //         </head>
+    //         <body>
+    //             <div id="row">`;
+    //     for (let i = 0; i < pinsArr.length; i++) {
+    //         html += `<div class="card">
+    //                     <div class="top vSpace">
+    //                         <span>${nameOnCard}</span>
+    //                         <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
+    //                     </div>
+    //                     <p class="vSpace">PIN <span class="bold">${pinsArr[i].pin}</span></p>
+    //                     <p style="font-size:12px;" class="vSpace">S/N ${pinsArr[i].sn}</p>
+    //                     <p class="info">Dial *311*${pinsArr[i].pin}#</p>
+    //                 </div>`;
+    //     }
+    //     html += `</div>
+    //         </body>
+    //     </html>`;
+    // }
     return html;
 }
