@@ -737,44 +737,44 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
   initTransaction(req, service, next, async (transactionId, options) => {
-    const resp = await fetch(`${process.env.EPIN_API}/waec/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apikey: process.env.EPIN_KEY,
-        service: "waec",
-        vcode: 'waecdirect',
-        // amount:
-        ref: transactionId
-      }),
-    });
-    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
-    console.log('buyExamPIN ::: resp.status :::', resp.status);
-    const json = await resp.json();
-    console.log('buyExamPIN ::: json :::', json);
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
-
-    // const body = {
-    //   request_id: transactionId,
-    //   serviceID: service.vendorCode,
-    //   // variation_code: req.body[P.variationCode],
-    //   variation_code: service?.vendorVariationCode,
-    //   quantity: req.body[P.quantity],
-    //   phone: req.body[P.recipient]
-    // };
-    // if (req.body?.[P.profileCode]) { //case of utme
-    //   body.billersCode = req.body[P.profileCode];
-    // }
-    // console.log('buyExamPIN ::: body :::', body);
-    // const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    // const resp = await fetch(`${process.env.EPIN_API}/waec/`, {
     //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-    //   body: JSON.stringify(body),
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     apikey: process.env.EPIN_KEY,
+    //     service: "waec",
+    //     vcode: 'waecdirect',
+    //     // amount:
+    //     ref: transactionId
+    //   }),
     // });
-    // // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    // if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
+    // console.log('buyExamPIN ::: resp.status :::', resp.status);
     // const json = await resp.json();
-    // // console.log('buyExamPIN ::: json :::', json);
-    // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    // console.log('buyExamPIN ::: json :::', json);
+    // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
+
+    const body = {
+      request_id: transactionId,
+      serviceID: service.vendorCode,
+      // variation_code: req.body[P.variationCode],
+      variation_code: service?.vendorVariationCode,
+      quantity: req.body[P.quantity],
+      phone: req.body[P.recipient]
+    };
+    if (req.body?.[P.profileCode]) { //case of utme
+      body.billersCode = req.body[P.profileCode];
+    }
+    console.log('buyExamPIN ::: body :::', body);
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify(body),
+    });
+    // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    const json = await resp.json();
+    // console.log('buyExamPIN ::: json :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
 
     updateTransaction(obj, options);
     let jsonResp = { status, msg };
