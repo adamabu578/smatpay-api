@@ -14,11 +14,14 @@ const transactionSchema = new mongoose.Schema({
         type: mongoose.Types.ObjectId,
         required: true,
     },
+    serviceVariation: {
+        type: String,
+    },
     recipient: {
         type: String,
         required: true,
     },
-    unitPrice: {
+    unitPrice: { //the real unit price
         type: Number,
         required: true,
     },
@@ -33,9 +36,21 @@ const transactionSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
-    totalAmount: {
+    amount: { //unit price after removing commission
         type: Number,
-        default: 1,
+        required: true
+    },
+    totalAmount: { //amount multiply by quantity
+        type: Number,
+        required: true
+    },
+    balanceBefore: {
+        type: Number,
+        required: true
+    },
+    balanceAfter: {
+        type: Number,
+        required: true
     },
     scheduleId: {
         type: mongoose.Types.ObjectId,
@@ -49,6 +64,15 @@ const transactionSchema = new mongoose.Schema({
     },
     tags: {
         type: [],
+    },
+    refundStatus: {
+        type: String,
+    },
+    respObj: {
+        type: Object,
+    },
+    rawResp: {
+        type: Object,
     }
 }, {
     timestamps: {
@@ -57,5 +81,9 @@ const transactionSchema = new mongoose.Schema({
 });
 
 const Transaction = mongoose.model('transactions', transactionSchema);
+
+// const transactionEventEmitter = Transaction.watch();
+
+// transactionEventEmitter.on('change', change => console.log('transactionEventEmitter', JSON.stringify(change)));
 
 module.exports = Transaction;

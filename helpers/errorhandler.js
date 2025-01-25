@@ -2,10 +2,11 @@ const AppError = require('./AppError');
 
 const handleCastErrorDB = (err) => {
   const message = `Invalid ${err.path}: ${err.value}`;
-  return new AppEhelpersrror(400, message);
+  return new AppError(400, message);
 };
 
 const handleDuplicateFieldsDB = (err) => {
+  console.log('handleDuplicateFieldsDB', err);
   // const value = err.errmsg.match(/(["'])(\\?.)*?\1/)[0];
   const value = err.keyValue.name;
   // console.log(value);
@@ -23,10 +24,10 @@ const handleValidationErrorDB = (err) => {
 
 const handleJWTError = (err) => new AppError(401, 'Invalid token. Kindly log in again!');
 
-const handleJWTExpiredError = (err) => new AppError(401, 'Your token has expired. Kindly log in again!');
+const handleJWTExpiredError = (err) => new AppError(401, 'Token has expired.');
 
 const sendDevError = (err, res) => {
-  // console.log(err);
+  console.log(err);
   const json = {
     status: 'error',
     msg: err.message,
@@ -38,12 +39,13 @@ const sendDevError = (err, res) => {
 };
 
 const sendProdError = (err, res) => {
-  // console.log(err);
+  console.log(err);
   // Operational, trusted error: send message to client
   if (err.isOperational) {
     const json = {
       status: 'error',
       msg: err.message,
+      // stack: err.stack,
     };
     if (err?.data)
       json.data = err.data;

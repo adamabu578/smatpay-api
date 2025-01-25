@@ -1,48 +1,76 @@
 const { default: mongoose } = require("mongoose");
-const { uid } = require("uid");
+const { COMMISSION } = require("../helpers/consts");
 
 const userSchema = new mongoose.Schema({
-    firstName: {
-        type: String,
+    uid: {
+        type: {
+            email: { type: String },
+            phone: { type: String },
+            telegramId: { type: String },
+        },
         required: true,
     },
-    lastName: {
-        type: String,
-        required: true,
+    name: {
+        type: {
+            first: { type: String, required: true, },
+            last: { type: String, required: true, },
+        },
     },
-    email: {
-        type: String,
-        required: true,
-        unique: true
+    telegramNumber: {
+        type: String
     },
-    phone: {
-        type: String,
-        required: true,
-        unique: true
+    role: {
+        type: String
     },
-    emailStatus: {
-        type: String,
-        default: 'pending'
+    balance: {
+        type: Number,
+        default: 0.00,
     },
-    phoneStatus: {
-        type: String,
-        default: 'pending'
+    commission: {
+        type: Object,
+        default: COMMISSION
     },
     testKey: {
         type: String,
         required: true,
         unique: true,
-        default: 'tk' + uid(20),
+        // default: 'tk' + uid(20)
     },
     liveKey: {
         type: String,
         required: true,
         unique: true,
-        default: 'lk' + uid(20),
+        // default: 'lk' + uid(20)
+    },
+    // keys: {
+    //     type: {
+    //         test: {
+    //             type: String, required: true, unique: true,
+    //             // default: 'tk' + uid(20)
+    //         },
+    //         live: {
+    //             type: String, required: true, unique: true,
+    //             // default: 'lk' + uid(20) 
+    //         },
+    //     },
+    // },
+    referralCode: {
+        type: String,
+        required: true,
+        unique: true,
+    },
+    referrer: {
+        type: mongoose.Types.ObjectId
+    },
+    referralBonus: {
+        type: Number,
+        default: 0.00,
+    },
+    fcmToken: {
+        type: String,
     },
     password: {
         type: String,
-        required: true,
     },
 }, {
     timestamps: {

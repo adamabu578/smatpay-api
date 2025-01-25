@@ -1,5 +1,6 @@
 require('dotenv').config();
 require("./helpers/crons");
+
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -54,13 +55,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(session(sessOption));
 app.use(cors(corsOptions));
 
-const prefix = process.env.NODE_ENV != 'development' ? 'vtu' : '';
+const prefix = process.env.NODE_ENV != 'development' ? 'v24u' : 'v24u/sandbox';
 
 app.use(`/${prefix}`, router);
 
 app.use(globalErrorHandler);
 
-const port = 3003;
+const port = process.env.NODE_ENV != 'development' ? 3003 : 3004;
 app.listen(port, () => {
   console.log(`Running on port: ${port}`);
 })
+
+// lsof -i :3000
+// kill -9 PROCESS-ID
