@@ -9,6 +9,7 @@ module.exports = {
 
     provider: 'provider',
     operator: 'operator',
+    network: 'network',
     recipient: 'recipient',
     phoneNumber: 'phoneNumber',
     amount: 'amount',

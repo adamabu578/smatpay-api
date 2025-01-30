@@ -122,46 +122,21 @@ exports.calcBonus = (unitPrice, qty, defaultUnitBonus, userUnitBonus, commission
     return unitBonus * qty;
 };
 
-// exports.initTransaction = async (req, onError, onSuccess) => {
-//     try {
-//         const missing = this.pExCheck(req.body, [P.provider, P.recipient, P.amount, P.serviceId, P.commissionType, P.commissionKey]);
-//         if (missing.length != 0) return onError(new AppError(400, 'Missing fields.', missing));
+exports.getServiceVariations = async (endpoint) => {
+    const resp = await fetch(`${process.env.V24U_API}${endpoint}`, {
+        headers: { 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
+    });
+    // console.log('getServiceVariations ::: resp.status :::', resp.status);
+    if (resp.status != 200) return null;
+    const json = await resp.json();
+    // console.log('getServiceVariations ::: json :::', json);
+    return json?.data;
+}
 
-//         const user = await User.findOne({ _id: req.user.id }, { 'uid.telegramId': 1, balance: 1, commission: 1 });
-//         const unitCommission = user.commission[req.body[P.commissionKey]];
-
-//         const qty = req.body?.[P.quantity] ?? 1;
-//         const amount = req.body[P.amount];
-
-//         const [totalAmount, commission] = this.calcCommission(amount, qty, unitCommission, req.body[P.commissionType]);
-//         // console.log('totalAmount', totalAmount);
-
-//         const balance = user.balance;
-//         // console.log('balance', balance);
-//         const balanceAfter = BigNumber(balance).minus(totalAmount);
-//         // console.log('balanceAfter', balanceAfter);
-//         if (balanceAfter < 0) return onError(new AppError(402, 'Insufficient balance'));
-
-//         if (req.body?.tags) {
-//             const q3 = await Transaction.find({ userId: req.user.id, recipient: req.body[P.recipient], tags: req.body.tags });
-//             if (q3.length != 0) return onError(new AppError(400, 'Duplicate transaction')); //transaction with tags for recipient already exist
-//         }
-
-//         const q4 = await User.updateOne({ _id: req.user.id }, { balance: balanceAfter });
-//         if (q4?.modifiedCount != 1) return onError(new AppError(500, 'Account error'));
-
-//         const transactionId = this.genRefNo();
-//         const fields = { userId: req.user.id, transactionId, serviceId: req.body[P.serviceId], recipient: req.body[P.recipient], unitPrice: amount, quantity: qty, commission, amount, totalAmount, balanceBefore: balance, balanceAfter, tags: req.body?.tags };
-//         if (req.body[P.serviceVariation]) {
-//             fields[P.serviceVariation] = req.body[P.serviceVariation];
-//         }
-//         await Transaction.create(fields);
-//         onSuccess(transactionId, { id: user._id, telegramId: user.uid.telegramId });
-//     } catch (error) {
-//         console.log(error);
-//         return onError(new AppError(500, 'Transaction initiation error'));
-//     }
-// };
+exports.getAmtFromVariations = (variations, variationCode) => {
+    const variation = variations?.filter(i => i?.variation_code == variationCode)[0];
+    return variation?.variation_amount;
+}
 
 exports.initTransaction = async (req, service, onError, onSuccess) => {
     try {
@@ -251,7 +226,6 @@ exports.updateTransaction = async (json, options) => {
 }
 
 exports.afterTransaction = (transactionId, statusCode, json) => {
-    console.log('called...');
     const obj = { transactionId };
     let respCode = 500, status = 'error', msg;
     if (statusCode == 200 || statusCode == 201) {
