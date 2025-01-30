@@ -1,22 +1,14 @@
 exports.TIMEZONE = 'Africa/Lagos';
 exports.DEFAULT_LOCALE = 'en-US';
 
-exports.BIZ_KLUB_KEY = btoa(`${process.env.BIZ_KLUB_API_KEY}|${process.env.BIZ_KLUB_PIN}`);
-
-// exports.COMMISSION_MODE = {  //should be removed later
-//     PRICE: 0,
-//     PERCENTAGE: 1,
-// };
-
-exports.COMMISSION_TYPE = {
-    AMOUNT: 'amount',
-    RATE: 'rate',
-};
-
 exports.TRANSACTION_STATUS = {
     PENDING: 'pending',
     FAILED: 'failed',
     DELIVERED: 'delivered',
+};
+
+exports.COMMISSION_TYPE = {
+    AMOUNT: 'amount',
 };
 
 exports.REFUND_STATUS = {
@@ -24,80 +16,5 @@ exports.REFUND_STATUS = {
     REFUNDED: 'refunded',
 };
 
-exports.VENDORS = {
-    VTPASS: 'VTPass',
-    EPINS: 'ePINs',
-    BIZKLUB: 'BizKlub',
-};
-
-exports.ROLES = {
-    admin: 'admin',
-};
-
-exports.MENU_STEPS = {
-    _welcome: '_welcome',
-};
-
-exports.MENU_OPTION = {
-    invalid: 'invalid',
-};
-
-exports.BOT_COMMANDS = {
-    start: '.',
-};
-
 exports.NETWORKS = { 'MTN': 'MTN', 'AIRTEL': 'Airtel', 'GLO': 'Glo', '9MOBILE': 'etisalat' };
 
-exports.BIZ_KLUB_NETWORK_CODES = { 'mtn': '803', 'airtel': '802', 'glo': '805', '9mobile': '809' };
-
-// exports.COMMISSION = {
-//     "vtu-mtn": 2.5,
-//     "vtu-airtel": 2.9,
-//     "vtu-glo": 3.5,
-//     "vtu-9mobile": 3.5,
-//     "data-mtn": 2.5,
-//     "data-airtel": 2.9,
-//     "data-glo": 3.5,
-//     "data-9mobile": 3.5,
-//     "sme-data-glo": 3.0,
-//     "pin-mtn-100": 1.2,
-//     "pin-mtn-200": 2.4,
-//     "pin-mtn-500": 10,
-//     "pin-mtn-1000": 20,
-//     "pin-airtel-100": 3,
-//     "pin-airtel-200": 5,
-//     "pin-airtel-500": 15,
-//     "pin-glo-100": 3,
-//     "pin-glo-200": 6,
-//     "pin-glo-500": 20,
-//     "pin-9mobile-100": 2,
-//     "pin-9mobile-200": 4,
-//     "pin-9mobile-500": 12,
-// };
-exports.COMMISSION = {
-    'vtu-mtn': 0.0,
-    'vtu-airtel': 0.0,
-    'vtu-glo': 0.0,
-    'vtu-9mobile': 0.0,
-    'data-mtn': 0.0,
-    'data-airtel': 0.0,
-    'data-glo': 0.0,
-    'data-9mobile': 0.0,
-    'sme-data-glo': 0.0,
-    'epin-mtn-100': 0.0,
-    'epin-mtn-200': 0.0,
-    'epin-mtn-500': 0.0,
-    'epin-mtn-1000': 0.0,
-    'epin-airtel-100': 0.0,
-    'epin-airtel-200': 0.0,
-    'epin-airtel-500': 0.0,
-    'epin-airtel-1000': 0.0,
-    'epin-glo-100': 0.0,
-    'epin-glo-200': 0.0,
-    'epin-glo-500': 0.0,
-    'epin-glo-1000': 0.0,
-    'epin-9mobile-100': 0.0,
-    'epin-9mobile-200': 0.0,
-    'epin-9mobile-500': 0.0,
-    'epin-9mobile-1000': 0.0,
-};

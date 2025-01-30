@@ -78,7 +78,7 @@ exports.sendEmail = async (email, subject, body, callback) => {
             transporter.sendMail(fields)
                 .then(callback);
         } else {
-           return await transporter.sendMail(fields);
+            return await transporter.sendMail(fields);
         }
         // console.log('email sent sucessfully');
     } catch (error) {
@@ -177,7 +177,7 @@ exports.initTransaction = async (req, service, onError, onSuccess) => {
         const amount = req.body[P.amount];
         // console.log('amount', amount);
 
-        const commissionType = service.commissionType;
+        const commissionType = service?.commissionType ?? COMMISSION_TYPE.AMOUNT;
         const [unitAmount, totalAmount, commission] = this.calcCommission(amount, qty, defaultUnitCommission, userUnitCommission, commissionType);
         // console.log('totalAmount', totalAmount);
 
@@ -206,8 +206,8 @@ exports.initTransaction = async (req, service, onError, onSuccess) => {
             commission,
             amount: unitAmount,
             totalAmount,
-            balanceBefore: balance,
-            balanceAfter,
+            // balanceBefore: balance,
+            // balanceAfter,
             tags: req.body?.tags
         };
         if (req.body[P.serviceVariation]) {
@@ -215,7 +215,7 @@ exports.initTransaction = async (req, service, onError, onSuccess) => {
         }
         await Transaction.create(fields);
         const defaultUnitBonus = service?.unitBonus ?? 0;
-        const successOptions = { id: user._id, telegramId: user.uid.telegramId, referrer: user?.referrer, unitPrice: amount, qty, defaultUnitBonus, commissionType };
+        const successOptions = { id: user._id, referrer: user?.referrer, unitPrice: amount, qty, defaultUnitBonus, commissionType };
         onSuccess(transactionId, successOptions);
     } catch (error) {
         console.log('initTransaction ::: ERROR :::', error);
@@ -250,127 +250,60 @@ exports.updateTransaction = async (json, options) => {
     }
 }
 
-exports.afterTransaction = (transactionId, json, vendor) => {
+exports.afterTransaction = (transactionId, statusCode, json) => {
+    console.log('called...');
     const obj = { transactionId };
     let respCode = 500, status = 'error', msg;
-    if (vendor == VENDORS.VTPASS) {
-        if (json.code == '000') {
-            obj.status = json.content.transactions.status;
-            obj.statusDesc = json?.response_description;
-            if (json?.cards) { //waec result checker
-                obj.respObj = {
-                    pins: json?.cards.map(i => ({ pin: i.Pin, serial: i.Serial }))
-                };
-            }
-            if (json?.tokens) { //waec registration
-                obj.respObj = {
-                    pins: json?.tokens.map(i => ({ pin: i }))
-                };
-            }
-            if (json?.Pin) { //utme
-                obj.respObj = {
-                    pins: [{ pin: this.removeAllWhiteSpace(json?.Pin.split(':')[1]) }]
-                };
-            }
-            if (json?.token) { //electricity
-                obj.respObj = {
-                    token: this.removeAllWhiteSpace(json?.token.split(':')[1])
-                };
-            }
-            if (json?.purchased_code) { //still electricity. this is just to hold the full value
-                obj.respObj = {
-                    ...obj?.respObj,
-                    purchased_code: json?.purchased_code
-                };
-            }
-            respCode = obj.status == TRANSACTION_STATUS.DELIVERED ? 200 : 201;
-            status = 'success';
-            msg = obj.status == TRANSACTION_STATUS.DELIVERED ? 'Successful' : 'Request initiated';
-        } else if (json.code == '018') { //Low balance
-            vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
-            obj.status = TRANSACTION_STATUS.FAILED;
-            obj.statusDesc = 'Transaction failed';
-            obj.refundStatus = REFUND_STATUS.PENDING;
-            msg = 'Transaction failed'; //'Pending transaction';
-        } else {
-            msg = json?.content?.error ?? 'Transaction failed';
-            vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
-            obj.status = TRANSACTION_STATUS.FAILED;
-            obj.statusDesc = json?.response_description;
-            obj.refundStatus = REFUND_STATUS.PENDING;
-        }
-    } else if (vendor == VENDORS.BIZKLUB) {
-        if (json.statusCode == 200) {
-            vEvent.emit(VEVENT_CHECK_BALANCE, vendor, json?.wallet); //emit low balance event
-            obj.status = TRANSACTION_STATUS.DELIVERED;
-            obj.statusDesc = json.status;
-            respCode = 200;
-            status = 'success';
-            msg = 'Successful';
-        } else if (json.statusCode == 204) { //Low balance
-            vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
-            obj.status = TRANSACTION_STATUS.FAILED;
-            obj.statusDesc = 'Transaction failed';
-            obj.refundStatus = REFUND_STATUS.PENDING;
-            msg = 'Transaction failed'; //'Pending transaction';
-        } else {
-            msg = json?.message ?? 'An error occured';
-            vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
-            obj.status = TRANSACTION_STATUS.FAILED;
-            obj.statusDesc = json?.message;
-            obj.refundStatus = REFUND_STATUS.PENDING;
-        }
-    } else if (vendor == VENDORS.EPINS) {
-        // obj.rawResp = json;
-        if (json.code == 101) {
-            obj.status = TRANSACTION_STATUS.DELIVERED;
-            obj.statusDesc = json.description?.status ?? 'TRANSACTION SUCCESSFUL';
-            if (json.description?.PIN) { //airtime pin
-                const pinArr = json.description.PIN.split('\n');
-                obj.respObj = {
-                    pins: pinArr.map(i => {
-                        const item = i.split(',');
-                        return { pin: item[0], serial: item[1] };
-                    })
-                };
-            }
-            // if (json?.tokens) { //waec registration
-            //     obj.respObj = {
-            //         pins: json?.tokens.map(i => ({ pin: i }))
-            //     };
-            // }
-            // if (json?.Pin) { //utme
-            //     obj.respObj = {
-            //         pins: [{ pin: this.removeAllWhiteSpace(json?.Pin.split(':')[1]) }]
-            //     };
-            // }
-            // if (json?.token) { //electricity
-            //     obj.respObj = {
-            //         token: this.removeAllWhiteSpace(json?.token.split(':')[1])
-            //     };
-            // }
-            if (json?.description) { //this is just to hold the full description field
-                obj.respObj = {
-                    ...obj?.respObj,
-                    description: json?.description
-                };
-            }
-            respCode = 200;
-            status = 'success';
-            msg = 'Downloading...';
-        } else if (json.code == 102) { //Low balance
-            vEvent.emit(VEVENT_INSUFFICIENT_BALANCE, vendor); //emit low balance event
-            obj.status = TRANSACTION_STATUS.FAILED;
-            obj.statusDesc = 'Transaction failed';
-            obj.refundStatus = REFUND_STATUS.PENDING;
-            msg = 'Transaction failed'; //'Pending transaction';
-        } else {
-            msg = json?.description ?? 'An error occured';
-            vEvent.emit(VEVENT_TRANSACTION_ERROR, vendor, msg); //emit transaction error event
-            obj.status = TRANSACTION_STATUS.FAILED;
-            obj.statusDesc = json.description;
-            obj.refundStatus = REFUND_STATUS.PENDING;
-        }
+    if (statusCode == 200 || statusCode == 201) {
+        obj.status = TRANSACTION_STATUS.DELIVERED;
+        obj.statusDesc = json?.data?.description ?? json?.msg;
+        // if (json?.cards) { //waec result checker
+        //     obj.respObj = {
+        //         pins: json?.cards.map(i => ({ pin: i.Pin, serial: i.Serial }))
+        //     };
+        // }
+        // if (json?.tokens) { //waec registration
+        //     obj.respObj = {
+        //         pins: json?.tokens.map(i => ({ pin: i }))
+        //     };
+        // }
+        // if (json?.Pin) { //utme
+        //     obj.respObj = {
+        //         pins: [{ pin: this.removeAllWhiteSpace(json?.Pin.split(':')[1]) }]
+        //     };
+        // }
+        // if (json?.token) { //electricity
+        //     obj.respObj = {
+        //         token: this.removeAllWhiteSpace(json?.token.split(':')[1])
+        //     };
+        // }
+        // if (json?.purchased_code) { //still electricity. this is just to hold the full value
+        //     obj.respObj = {
+        //         ...obj?.respObj,
+        //         purchased_code: json?.purchased_code
+        //     };
+        // }
+        // respCode = obj.status == TRANSACTION_STATUS.DELIVERED ? 200 : 201;
+        respCode = statusCode;
+        status = 'success';
+        // msg = obj.status == TRANSACTION_STATUS.DELIVERED ? 'Successful' : 'Request initiated';
+        msg = statusCode == 200 ? 'Transaction successful' : 'Transaction initiated';
+    } else if (statusCode == 402) { //Payment required
+        obj.status = TRANSACTION_STATUS.FAILED;
+        obj.statusDesc = 'Transaction failed';
+        obj.refundStatus = REFUND_STATUS.PENDING;
+        msg = 'Transaction failed'; //'Pending transaction';
+    } else if (statusCode == 401 || statusCode == 403) { //Access denied or Forbidden
+        obj.status = TRANSACTION_STATUS.FAILED;
+        obj.statusDesc = 'Transaction failed';
+        obj.refundStatus = REFUND_STATUS.PENDING;
+        msg = 'Transaction failed'; //'Pending transaction';
+    } else {
+        msg = json?.msg ?? 'Transaction failed';
+        obj.status = TRANSACTION_STATUS.FAILED;
+        obj.statusDesc = json?.description ?? json?.msg;
+        obj.refundStatus = REFUND_STATUS.PENDING;
+        respCode = statusCode;
     }
     return { respCode, status, msg, obj };
 }
@@ -391,8 +324,8 @@ exports.createPDF = async (filename, html) => {
 
 exports.genHTMLTemplate = (template, nameOnCard, pinsArr) => {
     let html = '';
-    if (template == '100-200-airtime') {
-        html = `<!DOCTYPE html>
+    // if (template == '100-200-airtime') {
+    html = `<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
@@ -440,8 +373,8 @@ exports.genHTMLTemplate = (template, nameOnCard, pinsArr) => {
             </head>
             <body>
                 <div id="row">`;
-        for (let i = 0; i < pinsArr.length; i++) {
-            html += `<div class="card">
+    for (let i = 0; i < pinsArr.length; i++) {
+        html += `<div class="card">
                         <div class="top">
                             <span>${nameOnCard}</span>
                             <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
@@ -450,76 +383,77 @@ exports.genHTMLTemplate = (template, nameOnCard, pinsArr) => {
                         <p style="font-size:12px;">S/N ${pinsArr[i].sn}</p>
                         <p class="info">Dial *311*${pinsArr[i].pin}#</p>
                     </div>`;
-        }
-        html += `</div>
-            </body>
-        </html>`;
-    } else if (template == '500-1000-airtime') {
-        html = `<!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Document</title>
-                <style>
-                    body {
-                        margin: 0;
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    }
-            
-                    p,
-                    span {
-                        margin: 0;
-                        font-size: 12px;
-                    }
-            
-                    #row {
-                        display: flex;
-                        flex-wrap: wrap;
-                    }
-            
-                    .card {
-                        width: 336px;
-                        border-bottom: 0.5px dashed black;
-                        border-right: 0.5px dashed black;
-                        padding: 10px;
-                        padding-left: 50px;
-                    }
-            
-                    .top {
-                        display: flex;
-                        justify-content: space-between;
-                    }
-            
-                    .info {
-                        font-size: 10px;
-                        font-weight: 200;
-                    }
-            
-                    span.bold {
-                        font-weight: 800;
-                    }
-                    .vSpace {
-                        margin-bottom:4px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div id="row">`;
-        for (let i = 0; i < pinsArr.length; i++) {
-            html += `<div class="card">
-                        <div class="top vSpace">
-                            <span>${nameOnCard}</span>
-                            <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
-                        </div>
-                        <p class="vSpace">PIN <span class="bold">${pinsArr[i].pin}</span></p>
-                        <p style="font-size:12px;" class="vSpace">S/N ${pinsArr[i].sn}</p>
-                        <p class="info">Dial *311*${pinsArr[i].pin}#</p>
-                    </div>`;
-        }
-        html += `</div>
-            </body>
-        </html>`;
     }
+    html += `</div>
+            </body>
+        </html>`;
+    // } 
+    // else if (template == '500-1000-airtime') {
+    //     html = `<!DOCTYPE html>
+    //         <html lang="en">
+    //         <head>
+    //             <meta charset="UTF-8">
+    //             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    //             <title>Document</title>
+    //             <style>
+    //                 body {
+    //                     margin: 0;
+    //                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    //                 }
+
+    //                 p,
+    //                 span {
+    //                     margin: 0;
+    //                     font-size: 12px;
+    //                 }
+
+    //                 #row {
+    //                     display: flex;
+    //                     flex-wrap: wrap;
+    //                 }
+
+    //                 .card {
+    //                     width: 336px;
+    //                     border-bottom: 0.5px dashed black;
+    //                     border-right: 0.5px dashed black;
+    //                     padding: 10px;
+    //                     padding-left: 50px;
+    //                 }
+
+    //                 .top {
+    //                     display: flex;
+    //                     justify-content: space-between;
+    //                 }
+
+    //                 .info {
+    //                     font-size: 10px;
+    //                     font-weight: 200;
+    //                 }
+
+    //                 span.bold {
+    //                     font-weight: 800;
+    //                 }
+    //                 .vSpace {
+    //                     margin-bottom:4px;
+    //                 }
+    //             </style>
+    //         </head>
+    //         <body>
+    //             <div id="row">`;
+    //     for (let i = 0; i < pinsArr.length; i++) {
+    //         html += `<div class="card">
+    //                     <div class="top vSpace">
+    //                         <span>${nameOnCard}</span>
+    //                         <span>${pinsArr[i].provider} &#8358;${pinsArr[i].denomination}</span>
+    //                     </div>
+    //                     <p class="vSpace">PIN <span class="bold">${pinsArr[i].pin}</span></p>
+    //                     <p style="font-size:12px;" class="vSpace">S/N ${pinsArr[i].sn}</p>
+    //                     <p class="info">Dial *311*${pinsArr[i].pin}#</p>
+    //                 </div>`;
+    //     }
+    //     html += `</div>
+    //         </body>
+    //     </html>`;
+    // }
     return html;
 }

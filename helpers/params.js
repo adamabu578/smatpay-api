@@ -8,7 +8,9 @@ module.exports = {
     password: 'password',
 
     provider: 'provider',
+    operator: 'operator',
     recipient: 'recipient',
+    phoneNumber: 'phoneNumber',
     amount: 'amount',
     serviceCode: 'serviceCode',
     bundleCode: 'bundleCode',

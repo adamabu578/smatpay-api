@@ -17,21 +17,19 @@ class Auth {
 
   auth = catchAsync(async (req, res, next) => {
     if (req?.headers?.authorization && req?.headers?.authorization.startsWith('Bearer')) {
-      const secret = req.headers.authorization.split(' ')[1];
-      req.account = { secret };
+      const token = req.headers.authorization.split(' ')[1];
+      req.account = { token };
     }
 
     if (req?.session?.token) {
       req.user = jwt.verify(req.session.token, this.secret).payload;
     }
 
-    if (req?.account?.secret) {
-      // const query = isLive(req.account.secret) ? { liveKey: req.account.secret } : { testKey: req.account.secret };
-      const query = process.env.NODE_ENV != 'development' ? { liveKey: req.account.secret } : { testKey: req.account.secret };
-      // console.log(query);
-      const q = await User.find(query, { _id: 1, role: 1 });
-      if (q?.length == 1) {
-        req.user = { ...req?.user, id: q[0]._id.toHexString(), role: q[0]?.role };
+    if (req?.account?.token) {
+      const { payload } = jwt.verify(req?.account?.token, process.env.AUTH_SECRET);
+      const q = await User.find({ _id: payload.id }, { _id: 1, token: 1 });
+      if (q?.length == 1 && payload.token == q[0].token) {
+        req.user = { ...req?.user, id: q[0]._id.toHexString() };
       }
     }
 
@@ -39,32 +37,12 @@ class Auth {
   });
 }
 
-// exports.preAuth = (req, res, next) => {
-//   new Auth(process.env.PRE_AUTH_SECRET).auth(req, res, () => {
-//     if (req?.user) {
-//       next();
-//     } else {
-//       return next(new AppError(403, 'Access denied'));
-//     }
-//   });
-// };
-
 exports.auth = (req, res, next) => {
   new Auth().auth(req, res, () => {
     if (req?.user) {
       next();
     } else {
-      return next(new AppError(403, 'Access denied'));
-    }
-  });
-};
-
-exports.authAdmin = (req, res, next) => {
-  new Auth().auth(req, res, () => {
-    if (req?.user?.role == ROLES.admin) {
-      next();
-    } else {
-      return next(new AppError(403, 'Access denied'));
+      return next(new AppError(401, 'Access denied'));
     }
   });
 };

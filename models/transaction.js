@@ -14,9 +14,9 @@ const transactionSchema = new mongoose.Schema({
         type: mongoose.Types.ObjectId,
         required: true,
     },
-    serviceVariation: {
-        type: String,
-    },
+    // serviceVariation: {
+    //     type: String,
+    // },
     recipient: {
         type: String,
         required: true,
@@ -44,17 +44,17 @@ const transactionSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    balanceBefore: {
-        type: Number,
-        required: true
-    },
-    balanceAfter: {
-        type: Number,
-        required: true
-    },
-    scheduleId: {
-        type: mongoose.Types.ObjectId,
-    },
+    // balanceBefore: {
+    //     type: Number,
+    //     required: true
+    // },
+    // balanceAfter: {
+    //     type: Number,
+    //     required: true
+    // },
+    // scheduleId: {
+    //     type: mongoose.Types.ObjectId,
+    // },
     status: {
         type: String,
         default: 'pending'
@@ -63,7 +63,7 @@ const transactionSchema = new mongoose.Schema({
         type: String,
     },
     tags: {
-        type: [],
+        type: String,
     },
     refundStatus: {
         type: String,
@@ -71,9 +71,9 @@ const transactionSchema = new mongoose.Schema({
     respObj: {
         type: Object,
     },
-    rawResp: {
-        type: Object,
-    }
+    // rawResp: {
+    //     type: Object,
+    // }
 }, {
     timestamps: {
         updatedAt: false,

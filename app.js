@@ -54,16 +54,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(session(sessOption));
 app.use(cors(corsOptions));
 
-const prefix = process.env.PATH_PREFIX; //process.env.NODE_ENV != 'development' ? 'v24u' : 'v24u/sandbox';
+const prefix = process.env.PATH_PREFIX;
 
 app.use(`/${prefix}`, router);
 
 app.use(globalErrorHandler);
 
-const port = process.env.PORT; //process.env.NODE_ENV != 'development' ? 3003 : 3004;
+const port = process.env.PORT;
 app.listen(port, () => {
   console.log(`Running on port: ${port}`);
-})
-
-// lsof -i :3000
-// kill -9 PROCESS-ID
+});

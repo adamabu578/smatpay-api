@@ -5,188 +5,110 @@ const fetch = require('node-fetch');
 const randtoken = require('rand-token');
 const { uid } = require("uid");
 const firebase = require('firebase-admin');
+const { default: mongoose } = require("mongoose");
 
 const catchAsync = require("../helpers/catchAsync");
-const Service = require("../models/service");
+
 const Transaction = require("../models/transaction");
 const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction } = require("../helpers/utils");
-const { default: mongoose } = require("mongoose");
-const { TIMEZONE, DEFAULT_LOCALE, VENDORS, BIZ_KLUB_KEY, BIZ_KLUB_NETWORK_CODES, ROLES, NETWORKS } = require("../helpers/consts");
-const { sendTelegramDoc } = require("./bot");
-const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
+const Service = require("../models/service");
+// const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
 
-const serviceAccount = require("../secret/v24u-35c94-firebase-adminsdk-uudcj-3773af88d0.json");
-const Otl = require("../models/otl");
+// exports.paystackWebhook = catchAsync(async (req, res, next) => {
+//   res.sendStatus(200);
+//   console.log('paystackWebhook', req.body);
+// });
 
-firebase.initializeApp({
-  credential: firebase.credential.cert(serviceAccount)
-});
+// exports.test = catchAsync(async (req, res, next) => {
+//   res.status(200).json([
+//     {
+//       "userId": 1,
+//       "id": 5,
+//       "title": "laboriosam mollitia et enim quasi adipisci quia provident illum",
+//       "completed": false
+//     },
+//     {
+//       "userId": 1,
+//       "id": 6,
+//       "title": "qui ullam ratione quibusdam voluptatem quia omnis",
+//       "completed": false
+//     },
+//   ]
+//   );
+// });
 
-exports.test = catchAsync(async (req, res, next) => {
-  res.status(200).json([
-    {
-      "userId": 1,
-      "id": 5,
-      "title": "laboriosam mollitia et enim quasi adipisci quia provident illum",
-      "completed": false
-    },
-    {
-      "userId": 1,
-      "id": 6,
-      "title": "qui ullam ratione quibusdam voluptatem quia omnis",
-      "completed": false
-    },
-  ]
-  );
-});
+// exports.setFCMToken = catchAsync(async (req, res, next) => {
+//   console.log('setFCMToken ::: req.body', req.body);
+//   const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
+//   console.log(q);
+//   res.status(200).json({ status: 'success', msg: 'Token updated' });
+// });
 
-exports.setFCMToken = catchAsync(async (req, res, next) => {
-  console.log('setFCMToken ::: req.body', req.body);
-  const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
-  console.log(q);
-  res.status(200).json({ status: 'success', msg: 'Token updated' });
-});
-
-exports.fcmPushMsg = catchAsync(async (req, res, next) => {
-  console.log('fcmPushMsg ::: req.body', req.body);
-  const q = await User.findOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: 1 });
-  const token = q?.fcmToken;
-  // const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
-  console.log(q);
-  const message = {
-    notification: {
-      title: null,
-      body: null,
-    },
-    token,
-  };
-  firebase.messaging().send(message);
-  res.status(200).json({ status: 'success', msg: 'Message pushed' });
-});
+// exports.fcmPushMsg = catchAsync(async (req, res, next) => {
+//   console.log('fcmPushMsg ::: req.body', req.body);
+//   const q = await User.findOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: 1 });
+//   const token = q?.fcmToken;
+//   // const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
+//   console.log(q);
+//   const message = {
+//     notification: {
+//       title: null,
+//       body: null,
+//     },
+//     token,
+//   };
+//   firebase.messaging().send(message);
+//   res.status(200).json({ status: 'success', msg: 'Message pushed' });
+// });
 
 exports.signUp = catchAsync(async (req, res, next) => {
-  const isTelegram = !!req.body?.[P.telegramId];
-  const params = [P.firstName, P.lastName, P.email, P.phone];
-  if (!isTelegram) { //registration not through telegram
-    params.push(P.password);
-  }
+  const params = [P.firstName, P.lastName, P.email, P.phone, P.password];
   const missing = pExCheck(req.body, params);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   req.body[P.phone] = req.body[P.phone].replace('+', ''); //in case the number starts with +
 
-  const { firstName, lastName, email, phone } = req.body;
-
-  const filter = [{ 'uid.email': email }, { 'uid.phone': phone }];
-
-  const uidObj = { email, phone };
-  if (isTelegram) {
-    uidObj[P.telegramId] = req.body[P.telegramId];
-    filter.push({ 'uid.telegramId': req.body[P.telegramId] });
-  }
+  const filter = [{ 'email': req.body[P.email] }, { 'phone': req.body[P.phone] }];
 
   const q = await User.find({ $or: filter });
-  if (q.length != 0 && q[0]?.uid?.email == req.body[P.email]) return next(new AppError(400, 'Account with email already exists'));
-  else if (q.length != 0 && q[0]?.uid?.phone == req.body[P.phone]) return next(new AppError(400, 'Account with phone already exists'));
-  else if (q.length != 0 && isTelegram && q[0]?.uid?.telegramId == req.body[P.telegramId]) return next(new AppError(400, 'Account already linked to telegram'));
+  if (q.length != 0 && q[0]?.email == req.body[P.email]) return next(new AppError(400, 'Account with email already exists'));
+  else if (q.length != 0 && q[0]?.phone == req.body[P.phone]) return next(new AppError(400, 'Account with phone already exists'));
 
-  const referralCode = randtoken.generate(8, "ABCDEFGHIJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz2345678998765432197324349877765463456789");
+  req.body[P.password] = bcrypt.hashSync(req.body[P.password], parseInt(process.env.PWD_HASH_LENGTH));
 
-  const fields = { uid: uidObj, name: { first: firstName, last: lastName }, testKey: 'tk' + uid(20), liveKey: 'lk' + uid(20), referralCode };
-
-  if (!isTelegram) { //registration not through telegram
-    fields.password = bcrypt.hashSync(req.body.password, parseInt(process.env.PWD_HASH_LENGTH));
-  } else {
-    fields[P.telegramNumber] = phone;
-  }
-
-  let referrer;
-  if (req.body?.[P.referralCode]) { //get the referrer details
-    referrer = await User.findOne({ referralCode: req.body[P.referralCode] }, { _id: 1, 'uid.telegramId': 1 });
-    fields[P.referrer] = referrer._id;
-  }
-
-  const q2 = await User.create(fields);
+  const q2 = await User.create({ firstName: req.body[P.firstName], lastName: req.body[P.lastName], email: req.body[P.email], phone: req.body[P.phone], password: req.body[P.password] });
   if (!q2) return next(new AppError(500, 'Could not create account.'));
 
-  res.status(200).json({ status: "success", msg: "Account created." });
-  vEvent.emit(VEVENT_ACCOUNT_CREATED, q2._id);
-  if (referrer) {
-    vEvent.emit(VEVENT_NEW_REFERRAL, referrer.uid.telegramId);
-  }
+  res.status(200).json({ status: "success", msg: "Account created. Kindly login." });
 });
 
-const afterLogin = (req, res, user) => {
-  const payload = { id: user._id.toHexString(), token: 'to be added' };
+const afterLogin = async (req, res, user) => {
+  const secret = uid(32);
 
-  const token = jwt.sign({ payload }, process.env.AUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
+  await User.updateOne({ _id: user._id }, { token: secret });
 
-  req.session.token = token;
+  const payload = { id: user._id.toHexString(), token: secret };
 
-  res.status(200).json({ status: "success", msg: "Logged in" });
+  const token = jwt.sign({ payload }, process.env.AUTH_SECRET);
+
+  res.status(200).json({ status: "success", msg: "Logged in", token });
 }
 
 exports.login = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.email, P.password]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const user = await User.findOne({ 'uid.email': req.body.email });
+  const user = await User.findOne({ email: req.body.email });
 
   if (!user) return next(new AppError(400, 'Invalid email and/or password'));
-
-  if (!user?.password) return res.status(403).json({ status: "error", msg: 'Password is not set.', next: 'no-password' });
 
   const isPasswordValid = bcrypt.compareSync(req.body.password, user.password);
 
   if (!isPasswordValid) return next(new AppError(400, 'Invalid email and/or password'));
-
-  afterLogin(req, res, user);
-});
-
-exports.getOtl = catchAsync(async (req, res, next) => { //otl = one time link
-  const field = {};
-  if (pExCheck(req.body, [P.email]).length == 0) {
-    field.name = P.email;
-    field.value = req.body[P.email];
-  } else if (pExCheck(req.body, [P.telegramId]).length == 0) {
-    field.name = P.telegramId;
-    field.value = req.body[P.telegramId];
-  } else {
-    return next(new AppError(400, `Either ${P.email} or ${P.telegramId} is required.`));
-  }
-
-  const user = await User.findOne({ [`uid.${[field.name]}`]: field.value });
-  if (!user) return next(new AppError(400, `Invalid ${field.name}`));
-
-  const token = randtoken.uid(12);
-
-  const q = await Otl.create({ uid: token, field, createdAt: new Date() });
-  if (!q) return next(new AppError(500, 'Request not successful'));
-
-  const otl = `${process.env.WEB_URL}/otl/${token}`;
-
-  const resp = field.name == P.email ? { status: 'success', msg: 'A One Time Link has been sent to your mail.' } : { status: 'success', msg: 'OTL generated.', data: { otl } }
-
-  res.status(200).json(resp);
-});
-
-exports.otlLogin = catchAsync(async (req, res, next) => {
-  const token = req.params.token;
-
-  const otl = await Otl.findOne({ uid: token });
-  if (!otl) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
-
-  const diffInMins = (new Date() - new Date(otl?.createdAt)) / (60 * 1000); //converted to minutes
-  const expiry = 10; //10 mins
-  if (otl?.isUsed == 1 || expiry - diffInMins < 0) return next(new AppError(400, 'Invalid One Time Link. Kindly get a new link.'));
-
-  const user = await User.findOne({ [`uid.${[otl.field.name]}`]: otl.field.value });
-  if (!user) return next(new AppError(400, 'Invalid account. Kindly get a new link'));
-  await Otl.updateOne({ _id: otl._id }, { isUsed: 1 });
 
   afterLogin(req, res, user);
 });
@@ -222,10 +144,10 @@ exports.setPassword = catchAsync(async (req, res, next) => {
 });
 
 
-exports.logout = catchAsync(async (req, res, next) => {
-  req.session.destroy();
-  res.status(200).json({ status: 'success', msg: 'Logged out' });
-});
+// exports.logout = catchAsync(async (req, res, next) => {
+//   req.session.destroy();
+//   res.status(200).json({ status: 'success', msg: 'Logged out' });
+// });
 
 exports.profile = catchAsync(async (req, res, next) => {
   const q = await User.aggregate([
@@ -233,7 +155,7 @@ exports.profile = catchAsync(async (req, res, next) => {
       $match: { _id: new mongoose.Types.ObjectId(req.user.id) }
     },
     {
-      $project: { id: '$_id', firstName: '$name.first', lastName: 1, testKey: 1, liveKey: 1 }
+      $project: { firstName: 1, lastName: 1, email: 1, phone: 1, createdAt: 1 }
     },
     {
       $project: { _id: 0 }
@@ -243,84 +165,32 @@ exports.profile = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] });
 });
 
-const singleTopup = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.body, [P.provider, P.recipient, P.amount]);
+exports.airtime = catchAsync(async (req, res, next) => {
+  const missing = pExCheck(req.body, [P.operator, P.phoneNumber, P.amount]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  req.body[P.provider] = req.body[P.provider].toLowerCase();
+  req.body[P.recipient] = req.body[P.phoneNumber];
 
-  // const q = await Service.findOne({ code: 'airtime' }, { _id: 1 });
-  const service = await Service.findOne({ code: `vtu-${req.body[P.provider]}` });
+  const service = await Service.findOne({ code: `airtime` });
   if (!service) return next(new AppError(500, 'Service error'));
 
-  // req.body[P.serviceId] = service._id;
-  // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
-  // req.body[P.commissionKey] = `vtu-${req.body[P.provider]}`;
-
   initTransaction(req, service, next, async (transactionId, options) => {
-    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    const resp = await fetch(`${process.env.V24U_API}/vtu/airtime`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
       body: JSON.stringify({
-        request_id: transactionId,
-        serviceID: req.body[P.provider],
+        provider: req.body[P.operator],
+        recipient: req.body[P.phoneNumber],
         amount: req.body[P.amount],
-        phone: req.body[P.recipient]
       }),
     });
-    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
-    const json = await resp.json();
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    console.log('resp.status :::', resp.status);
+    const json = await resp?.json();
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, resp.status, json);
+    console.log(respCode, ':::', status, ':::', msg, ':::', obj);
     res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, options);
   });
-});
-
-const bulkTopup = catchAsync(async (req, res, next) => {
-  const q = await Service.findOne({ code: 'airtime' }, { _id: 1 });
-  if (!q) return next(new AppError(500, 'Service error'));
-
-  res.status(201).json({ code: '000', msg: 'Transaction initiated' });
-
-  const arr = req.body.list;
-  for (let i = 0; i < arr.length; i++) {
-    try {
-      const q2 = await Transaction.find({ recipient: arr[i].msisdn, tags: req.body.tags });
-      if (q2.length == 0) { //transaction with tags for recipient does not exist
-        const rand = randtoken.generate(8, "01234567899876543210973243409877765463456789");
-        const dt = new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date());
-        const d = dt.split(',')[0].split('/');
-        const t = dt.split(',')[1].trim().split(':');
-        const ref = `${d[2]}${d[1]}${d[0]}${t[0]}${t[1]}${rand}`;
-
-        await Transaction.create({ userId: req.user.id, transactionId: ref, serviceId: q._id, recipient: arr[i].msisdn, unitPrice: arr[i].price, amount: arr[i].price, totalAmount: arr[i].price, balanceBefore: 0, balanceAfter: 0, tags: req.body?.tags });
-
-        const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-          body: JSON.stringify({
-            request_id: ref,
-            serviceID: arr[i].network.toLowerCase(),
-            amount: arr[i].price,
-            phone: arr[i].msisdn
-          }),
-        });
-        const json = await resp.json();
-        const obj = { transactionId: ref, status: json.content.transactions.status, statusDesc: json?.response_description };
-        updateTransaction(obj, req.user.id);
-      }
-    } catch (error) {
-      console.log('topup', ':::', 'error', ':::', error);
-    }
-  }
-});
-
-exports.airtime = catchAsync(async (req, res, next) => {
-  if (req.body?.list) {
-    bulkTopup(req, res, next);
-  } else {
-    singleTopup(req, res, next);
-  }
 });
 
 exports.listDataBundles = catchAsync(async (req, res, next) => {
@@ -636,12 +506,13 @@ exports.genAirtimePin = catchAsync(async (req, res, next) => {
 });
 
 const getVariations = async (vendorCode) => {
+  console.log('getVariations ::: vendorCode :::', vendorCode);
   const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${vendorCode}`, {
     headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
   });
-  // console.log('getVariations ::: resp.status :::', resp.status);
+  console.log('getVariations ::: resp.status :::', resp.status);
   const json = await resp.json();
-  // console.log('getVariations ::: json :::', json);
+  console.log('getVariations ::: json :::', json);
   if (json?.response_description != '000') return null; //return next(new AppError(400, 'Cannot list variations.'));
   return json?.content?.variations ?? json?.content?.varations;
 }
@@ -651,9 +522,11 @@ exports.previewExamPIN = catchAsync(async (req, res, next) => {
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
   const service = await Service.findOne({ code: req.params[P.serviceCode] });
+  console.log('previewExamPIN :::', 'service :::', service);
   if (!service) return next(new AppError(500, 'Invalid service'));
 
   const variations = await getVariations(service?.vendorCode);
+  console.log('variations :::', variations);
   if (!variations) return next(new AppError(400, 'Cannot list variations.'));
   // const variations = json?.content?.variations ?? json?.content?.varations;
   const pin = (variations?.filter(i => i?.variation_code == service?.vendorVariationCode))[0];
@@ -729,44 +602,44 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
   req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
 
   initTransaction(req, service, next, async (transactionId, options) => {
-    const resp = await fetch(`${process.env.EPIN_API}/waec/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apikey: process.env.EPIN_KEY,
-        service: "waec",
-        vcode: 'waecdirect',
-        // amount:
-        ref: transactionId
-      }),
-    });
-    if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
-    console.log('buyExamPIN ::: resp.status :::', resp.status);
-    const json = await resp.json();
-    console.log('buyExamPIN ::: json :::', json);
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
-
-    // const body = {
-    //   request_id: transactionId,
-    //   serviceID: service.vendorCode,
-    //   // variation_code: req.body[P.variationCode],
-    //   variation_code: service?.vendorVariationCode,
-    //   quantity: req.body[P.quantity],
-    //   phone: req.body[P.recipient]
-    // };
-    // if (req.body?.[P.profileCode]) { //case of utme
-    //   body.billersCode = req.body[P.profileCode];
-    // }
-    // console.log('buyExamPIN ::: body :::', body);
-    // const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    // const resp = await fetch(`${process.env.EPIN_API}/waec/`, {
     //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-    //   body: JSON.stringify(body),
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     apikey: process.env.EPIN_KEY,
+    //     service: "waec",
+    //     vcode: 'waecdirect',
+    //     // amount:
+    //     ref: transactionId
+    //   }),
     // });
-    // // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    // if (resp.status != 200) return next(new AppError(500, 'Sorry! we are experiencing a downtime.'));
+    // console.log('buyExamPIN ::: resp.status :::', resp.status);
     // const json = await resp.json();
-    // // console.log('buyExamPIN ::: json :::', json);
-    // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
+    // console.log('buyExamPIN ::: json :::', json);
+    // const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.EPINS);
+
+    const body = {
+      request_id: transactionId,
+      serviceID: service.vendorCode,
+      // variation_code: req.body[P.variationCode],
+      variation_code: service?.vendorVariationCode,
+      quantity: req.body[P.quantity],
+      phone: req.body[P.recipient]
+    };
+    if (req.body?.[P.profileCode]) { //case of utme
+      body.billersCode = req.body[P.profileCode];
+    }
+    // console.log('buyExamPIN ::: body :::', body);
+    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      body: JSON.stringify(body),
+    });
+    // console.log('buyExamPIN ::: resp.status :::', resp.status);
+    const json = await resp.json();
+    // console.log('buyExamPIN ::: json :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
 
     updateTransaction(obj, options);
     let jsonResp = { status, msg };
