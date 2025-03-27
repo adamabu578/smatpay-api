@@ -143,10 +143,10 @@ exports.airtime = catchAsync(async (req, res, next) => {
         amount: req.body[P.amount],
       }),
     });
-    console.log('resp.status :::', resp.status);
+    // console.log('resp.status :::', resp.status);
     const json = await resp?.json();
     const { respCode, status, msg, obj } = afterTransaction(transactionId, resp.status, json);
-    console.log(respCode, ':::', status, ':::', msg, ':::', obj);
+    // console.log(respCode, ':::', status, ':::', msg, ':::', obj);
     res.status(respCode).json({ status, msg, data: { transactionId } });
     updateTransaction(obj, options);
   });
@@ -582,7 +582,7 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
   perPage = parseInt(perPage, 10) || maxPerPage;
   perPage = perPage > maxPerPage ? maxPerPage : perPage;
 
-  const filter = {};
+  const filter = { userId: new mongoose.Types.ObjectId(req.user.id) };
   if (id) {
     filter.transactionId = { $in: id.split(',').filter(i => i != '') };
   }
@@ -635,7 +635,7 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
     return { ...i, service: services[i.service], createdAt: d.toLocaleString() };
   });
   json.data = list;
-  json.metadata = { page, perPage, total: _q[0].count[0]?.total ?? 0};
+  json.metadata = { page, perPage, total: _q[0].count[0]?.total ?? 0 };
   if (page * perPage < json.metadata.total) {
     json.metadata.nextPage = page + 1;
   }
