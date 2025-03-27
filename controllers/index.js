@@ -16,54 +16,13 @@ const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
 const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction, getServiceVariations, getAmtFromVariations } = require("../helpers/utils");
 const Service = require("../models/service");
+const { DEFAULT_LOCALE, TIMEZONE } = require("../helpers/consts");
 // const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
 
-// exports.paystackWebhook = catchAsync(async (req, res, next) => {
-//   res.sendStatus(200);
-//   console.log('paystackWebhook', req.body);
-// });
-
-// exports.test = catchAsync(async (req, res, next) => {
-//   res.status(200).json([
-//     {
-//       "userId": 1,
-//       "id": 5,
-//       "title": "laboriosam mollitia et enim quasi adipisci quia provident illum",
-//       "completed": false
-//     },
-//     {
-//       "userId": 1,
-//       "id": 6,
-//       "title": "qui ullam ratione quibusdam voluptatem quia omnis",
-//       "completed": false
-//     },
-//   ]
-//   );
-// });
-
-// exports.setFCMToken = catchAsync(async (req, res, next) => {
-//   console.log('setFCMToken ::: req.body', req.body);
-//   const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
-//   console.log(q);
-//   res.status(200).json({ status: 'success', msg: 'Token updated' });
-// });
-
-// exports.fcmPushMsg = catchAsync(async (req, res, next) => {
-//   console.log('fcmPushMsg ::: req.body', req.body);
-//   const q = await User.findOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: 1 });
-//   const token = q?.fcmToken;
-//   // const q = await User.updateOne({ _id: '66a26276a078c527461a26ca' }, { fcmToken: req.body.token });
-//   console.log(q);
-//   const message = {
-//     notification: {
-//       title: null,
-//       body: null,
-//     },
-//     token,
-//   };
-//   firebase.messaging().send(message);
-//   res.status(200).json({ status: 'success', msg: 'Message pushed' });
-// });
+exports.paystackWebhook = catchAsync(async (req, res, next) => {
+  res.sendStatus(200);
+  console.log('paystackWebhook', req.body);
+});
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const params = [P.firstName, P.lastName, P.email, P.phone, P.password];
@@ -617,7 +576,12 @@ exports.buyExamPIN = catchAsync(async (req, res, next) => {
 });
 
 exports.listTransactions = catchAsync(async (req, res, next) => {
-  const { id, recipient, status, tags, field, nameOnCard, format } = req.query;
+  const maxPerPage = 50;
+  let { id, recipient, status, tags, page, perPage, order } = req.query;
+  page = parseInt(page, 10) || 1;
+  perPage = parseInt(perPage, 10) || maxPerPage;
+  perPage = perPage > maxPerPage ? maxPerPage : perPage;
+
   const filter = {};
   if (id) {
     filter.transactionId = { $in: id.split(',').filter(i => i != '') };
@@ -632,22 +596,25 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
     filter.tags = { $in: tags.split(',').filter(i => i != '') };
   }
   const arr = [
+    { $sort: { _id: order?.toLowerCase() == 'asc' ? 1 : -1 } },
+    { $skip: (page - 1) * perPage },
+    { $limit: perPage },
+    { $project: { service: '$serviceId', serviceVariation: 1, recipient: 1, unitPrice: 1, quantity: 1, discount: 1, totalAmount: 1, status: 1, tags: 1, createdAt: 1, statusDescription: '$statusDesc' } },
+    { $project: { _id: 0 } }
+  ];
+  const _q = await Transaction.aggregate([
     {
       $match: filter
     },
     {
-      $limit: 50
+      $facet: {
+        count: [{ $count: 'total' }],
+        data: arr,
+      }
     }
-  ];
-  if (field && field == 'pin') {
-    arr.push({ $project: { service: '$serviceId', serviceVariation: 1, unitPrice: 1, quantity: 1, respObj: 1 } });
-  } else {
-    arr.push({ $project: { service: '$serviceId', serviceVariation: 1, recipient: 1, unitPrice: 1, quantity: 1, discount: 1, totalAmount: 1, status: 1, tags: 1, createdAt: 1, statusDescription: '$statusDesc' } });
-  }
-  arr.push({
-    $project: { _id: 0 }
-  });
-  const q = await Transaction.aggregate(arr);
+  ]);
+
+  const q = _q[0].data;
 
   const serviceIDs = new Set(); //values should be strings, or a mixture of numbers and strings
   for (let i = 0; i < q.length; i++) {
@@ -656,62 +623,21 @@ exports.listTransactions = catchAsync(async (req, res, next) => {
 
   const q2 = q.length > 0 ? await Service.find({ _id: { $in: Array.from(serviceIDs) } }) : [];
 
-  const template = new Set();
-  if (format == 'pdf') { //check if all the transaction has the same print template
-    const templates = {} //to hold the list of all the templates in all the service list
-    for (let i = 0; i < q2.length; i++) {
-      templates[q2[i]._id] = q2[i]?.templates;
-    }
-    for (let i = 0; i < q.length; i++) {
-      if (templates?.[q[i].service]) {
-        template.add(templates[q[i].service][q[i]?.serviceVariation]);
-      }
-    }
-    if (template.size != 1) return next(new AppError(400, 'Some transactions can\'t be combined'));
-  }
-
   const services = {};
 
   const json = { status: 'success', msg: 'Transactions listed' };
-  if (field && field == 'pin') {
-    for (let i = 0; i < q2.length; i++) {
-      services[q2[i]._id] = q2[i]?.provider;
-    }
+  for (let i = 0; i < q2.length; i++) {
+    services[q2[i]._id] = q2[i].title;
+  }
 
-    const pinArr = [], labelObj = {};
-    for (let i = 0; i < q.length; i++) {
-      const pins = q[i].respObj?.pins, provider = services[q[i].service], denomination = q[i].unitPrice;
-      for (let j = 0; j < pins?.length; j++) {
-        pinArr.push({ ...pins[j], provider, denomination });
-        labelObj[`${provider} N${denomination}`] = (labelObj?.[`${provider} N${denomination}`] ?? 0) + 1; //name on the pdf file
-      }
-    }
-
-    const user = await User.findOne({ _id: req.user.id }, { uid: 1 });
-
-    const path = await createPDF(user._id, genHTMLTemplate(template.values().next().value, nameOnCard, pinArr));
-    let fileName = '';
-    for (const key in labelObj) {
-      fileName += key + `[${labelObj[key]}] `;
-    }
-    if (format == 'pdf') {
-      fileName += '.pdf';
-      sendTelegramDoc(user.uid.telegramId, path, { fileName, deleteOnSent: true });
-      json.msg = 'File sent to your telegram';
-    } else {
-      json.description = fileName;
-      json.pins = pinArr;
-    }
-  } else {
-    for (let i = 0; i < q2.length; i++) {
-      services[q2[i]._id] = q2[i].title;
-    }
-
-    const list = q.map(i => {
-      const d = new Date(new Date(i.createdAt).toLocaleString(DEFAULT_LOCALE, { timeZone: TIMEZONE }));
-      return { ...i, service: services[i.service], createdAt: d.toLocaleString() };
-    });
-    json.data = list;
+  const list = q.map(i => {
+    const d = new Date(new Date(i.createdAt).toLocaleString(DEFAULT_LOCALE, { timeZone: TIMEZONE }));
+    return { ...i, service: services[i.service], createdAt: d.toLocaleString() };
+  });
+  json.data = list;
+  json.metadata = { page, perPage, total: _q[0].count[0]?.total ?? 0};
+  if (page * perPage < json.metadata.total) {
+    json.metadata.nextPage = page + 1;
   }
   res.status(200).json(json);
 });
@@ -742,18 +668,6 @@ exports.topupInit = catchAsync(async (req, res, next) => {
   console.log('JSON', ':::', json);
 
   res.status(200).json({ status: 'success', msg: 'Balance fetched' });
-});
-
-exports.callback = catchAsync(async (req, res, next) => {
-  res.status(200).json({ 'response': 'success' });
-  const testKey = 'tk' + uid(20);
-  const liveKey = 'lk' + uid(20);
-  console.log('callback', ':::', req.body, ':::', testKey, ':::', liveKey);
-});
-
-exports.ePinsCallback = catchAsync(async (req, res, next) => {
-  res.sendStatus(200);
-  console.log('ePinsCallback', ':::', req.body);
 });
 
 exports.verifyMeterNo = catchAsync(async (req, res, next) => {

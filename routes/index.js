@@ -35,10 +35,8 @@ router.post('/data', auth, base.subData);
 // router.post('/epin/exam/:serviceCode/verify', auth, base.verifyExamInput); //to verify any exam input e.g UTME profile code
 // router.post('/epin/exam', auth, base.buyExamPIN);
 
-// router.get('/transactions', auth, base.listTransactions);
+router.get('/history', auth, base.listTransactions);
 
-// router.post('/callback', base.callback); //vtpass
-// router.post('/webhook/epins', base.ePinsCallback);
-// router.post('/webhook/paystack', base.paystackWebhook); 
+router.post('/webhook/paystack', base.paystackWebhook); 
 
 module.exports = router;
