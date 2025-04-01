@@ -184,7 +184,7 @@ exports.profile = catchAsync(async (req, res, next) => {
       $match: { _id: new mongoose.Types.ObjectId(req.user.id) }
     },
     {
-      $project: { firstName: 1, lastName: 1, email: 1, phone: 1, createdAt: 1 }
+      $project: { firstName: 1, lastName: 1, email: 1, phone: 1, createdAt: 1, virtualAccounts: 1 }
     },
     {
       $project: { _id: 0 }
