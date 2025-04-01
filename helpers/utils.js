@@ -181,8 +181,6 @@ exports.initTransaction = async (req, service, onError, onSuccess) => {
             commission,
             amount: unitAmount,
             totalAmount,
-            // balanceBefore: balance,
-            // balanceAfter,
             tags: req.body?.tags
         };
         if (req.body[P.serviceVariation]) {
@@ -294,6 +292,62 @@ exports.createPDF = async (filename, html) => {
     } catch (error) {
         console.log('--------createPDF------------', error, '------------createPDF------------');
     }
+}
+
+exports.createPaystackCustomer = async (email, firstName, lastName, phone) => {
+    const resp = await fetch(`${process.env.PAYSTACK_API}/customer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+        body: JSON.stringify({ email, first_name: firstName, last_name: lastName, phone })
+    });
+    // console.log('createPaystackCustomer ::: resp.status :::', resp.status);
+    if (resp.status != 200) return { status: false };
+    const json = await resp.json();
+    // if (!json.status) return null;
+    // console.log('createPaystackCustomer ::: json :::', json);
+    return json;
+}
+
+exports.validatePaystackCustomer = async (cuid, firstName, lastName, bvn, accountNumber, bankCode, options = { middleName: null, country: 'NG' }) => {
+    const body = {
+        first_name: firstName,
+        last_name: lastName,
+        bvn,
+        account_number: accountNumber,
+        bank_code: bankCode,
+        type: 'bank_account',
+        country: options.country,
+    };
+    if (options?.middleName) {
+        body.middle_name = options.middleName;
+    }
+
+    const resp = await fetch(`${process.env.PAYSTACK_API}/customer/${cuid}/identification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+        body: JSON.stringify(body)
+    });
+    // console.log('validatePaystackCustomer ::: resp.status :::', resp.status);
+    if (resp.status != 200 && resp.status != 202) return { status: 'error' };
+    // const json = await resp.json();
+    // console.log('validatePaystackCustomer ::: json :::', json);
+    return { status: 'success' };
+}
+
+exports.createNUBAN = async (customerCode, options = { preferredBank: process.env.PAYSTACK_VA_PREFERRED_BANK }) => {
+    const resp = await fetch(`${process.env.PAYSTACK_API}/dedicated_account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+        body: JSON.stringify({
+            customer: customerCode,
+            preferred_bank: options.preferredBank, // "wema-bank" "titan-paystack"
+        })
+    });
+    // console.log('createNUBAN ::: resp.status :::', resp.status);
+    if (resp.status != 200) return { status: false };
+    const json = await resp.json();
+    // console.log('createNUBAN ::: json :::', json);
+    return json;
 }
 
 exports.genHTMLTemplate = (template, nameOnCard, pinsArr) => {

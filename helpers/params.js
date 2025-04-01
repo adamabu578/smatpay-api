@@ -6,6 +6,10 @@ module.exports = {
     telegramId: 'telegramId',
     telegramNumber: 'telegramNumber',
     password: 'password',
+    assignNuban: 'assignNuban',
+    bvn: 'bvn',
+    accountNumber: 'accountNumber',
+    bankCode: 'bankCode',
 
     provider: 'provider',
     operator: 'operator',
@@ -24,7 +28,6 @@ module.exports = {
     commissionType: 'commissionType',
     denomination: 'denomination',
     commissionKey: 'commissionKey',
-    nameOnCard: 'nameOnCard',
     type: 'type',
     referralCode: 'referralCode',
     referrer: 'referrer',

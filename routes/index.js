@@ -13,6 +13,7 @@ router.post('/login', base.login);
 // router.post('/password/reset', base.setPassword); 
 
 router.get('/profile', auth, base.profile);
+router.post('/virtual-account', auth, base.setupVirtualAccount);
 router.get('/balance', auth, base.balance);
 
 // router.post('/topup/init', auth, base.topupInit);

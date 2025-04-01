@@ -2,10 +2,11 @@ const bcrypt = require("bcrypt");
 // const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
 const fetch = require('node-fetch');
-const randtoken = require('rand-token');
+// const randtoken = require('rand-token');
 const { uid } = require("uid");
-const firebase = require('firebase-admin');
+// const firebase = require('firebase-admin');
 const { default: mongoose } = require("mongoose");
+const crypto = require('crypto');
 
 const catchAsync = require("../helpers/catchAsync");
 
@@ -14,18 +15,55 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction, getServiceVariations, getAmtFromVariations } = require("../helpers/utils");
+const { pExCheck, calcServicePrice, createPDF, genHTMLTemplate, initTransaction, updateTransaction, afterTransaction, getServiceVariations, getAmtFromVariations, createNUBAN, createPaystackCustomer, validatePaystackCustomer, genRefNo } = require("../helpers/utils");
 const Service = require("../models/service");
-const { DEFAULT_LOCALE, TIMEZONE } = require("../helpers/consts");
+const { DEFAULT_LOCALE, TIMEZONE, TRANSACTION_STATUS } = require("../helpers/consts");
 // const { vEvent, VEVENT_ACCOUNT_CREATED, VEVENT_NEW_REFERRAL } = require("../event/class");
 
 exports.paystackWebhook = catchAsync(async (req, res, next) => {
   res.sendStatus(200);
-  console.log('paystackWebhook', req.body);
+
+  const hash = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY).update(JSON.stringify(req.body)).digest('hex');
+  if (hash == req.headers['x-paystack-signature']) {
+    const body = req.body;
+    if (body.event == "charge.success") {
+      // console.log('body?.data?.metadata', body?.data?.metadata);
+      const amount = body.data.amount / 100; //convert kobo to naira
+      const totalAmount = amount;
+      const q = await User.find({ 'paystackCustomer.code': body?.data?.customer.customer_code, 'virtualAccounts.accountNumber': body?.data?.metadata.receiver_account_number });
+      if (q?.length == 1) {
+        const user = q[0];
+        const q2 = await Service.findOne({ code: 'wallet-topup' }, { _id: 1 });
+        const session = await mongoose.startSession();
+        try {
+          const transactionId = genRefNo();
+          session.startTransaction();
+          const q3 = await User.updateOne({ _id: user._id }, { $inc: { balance: totalAmount } }).session(session);
+          // console.log('q3 :::', q3);
+          const respObj = { reference: body?.data?.reference };
+          const q4 = await Transaction.create([{ userId: user._id, transactionId, serviceId: q2._id, recipient: 'wallet', unitPrice: amount, quantity: 1, amount, totalAmount, status: TRANSACTION_STATUS.DELIVERED, statusDesc: 'Wallet topup', respObj }], { session });
+          // console.log('q4 :::', q4);
+          if (q3?.modifiedCount == 1 && q4?.length > 0) {
+            await session.commitTransaction();
+          }
+        } catch (error) {
+          await session.abortTransaction();
+          console.error('Error during transaction:', error);
+        } finally {
+          session.endSession();
+        }
+      }
+    }
+  }
 });
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const params = [P.firstName, P.lastName, P.email, P.phone, P.password];
+  if (req.body?.[P.assignNuban] == 'yes') {
+    params.push(P.bvn);
+    params.push(P.accountNumber);
+    params.push(P.bankCode);
+  }
   const missing = pExCheck(req.body, params);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
@@ -39,8 +77,40 @@ exports.signUp = catchAsync(async (req, res, next) => {
 
   req.body[P.password] = bcrypt.hashSync(req.body[P.password], parseInt(process.env.PWD_HASH_LENGTH));
 
-  const q2 = await User.create({ firstName: req.body[P.firstName], lastName: req.body[P.lastName], email: req.body[P.email], phone: req.body[P.phone], password: req.body[P.password] });
+  const data = { firstName: req.body[P.firstName], lastName: req.body[P.lastName], email: req.body[P.email], phone: req.body[P.phone], password: req.body[P.password] };
+  if (req.body?.[P.bvn]) {
+    data[P.bvn] = req.body[P.bvn]
+  }
+  if (req.body?.[P.accountNumber]) {
+    data[P.accountNumber] = req.body[P.accountNumber]
+  }
+  if (req.body?.[P.bankCode]) {
+    data[P.bankCode] = req.body[P.bankCode]
+  }
+
+  const q2 = await User.create(data);
   if (!q2) return next(new AppError(500, 'Could not create account.'));
+
+  if (req.body?.[P.assignNuban] == 'yes') {
+    const customer = await createPaystackCustomer(req.body[P.email], req.body[P.firstName], req.body[P.lastName], req.body[P.phone]);
+    if (!customer?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account number. Kindly login to continue.'));
+    await User.updateOne({ _id: q2._id }, { 'paystackCustomer.code': customer.data.customer_code });
+    const validate = await validatePaystackCustomer(customer.data.customer_code, req.body[P.firstName], req.body[P.lastName], req.body[P.bvn], req.body[P.accountNumber], req.body[P.bankCode]);
+    if (validate.status != 'success') return next(new AppError(201, 'Account created. Unable to validate virtual account credentials. Kindly login to continue.'));
+    await User.updateOne({ _id: q2._id }, { 'paystackCustomer.isValidated': true });
+    const nuban = await createNUBAN(customer.data.customer_code);
+    if (!nuban?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account. Kindly login to continue.'));
+    const vaObj = {
+      bankName: nuban?.data?.bank?.name,
+      bankId: nuban?.data?.bank?.id,
+      bankSlug: nuban?.data?.bank?.slug,
+      accountName: nuban?.data?.account_name,
+      accountNumber: nuban?.data?.account_number,
+      currency: nuban?.data?.currency,
+      active: nuban?.data?.active,
+    };
+    await User.updateOne({ _id: q2._id }, { $push: { virtualAccounts: vaObj } });
+  }
 
   res.status(200).json({ status: "success", msg: "Account created. Kindly login." });
 });
@@ -122,6 +192,39 @@ exports.profile = catchAsync(async (req, res, next) => {
   ]);
 
   res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] });
+});
+
+exports.setupVirtualAccount = catchAsync(async (req, res, next) => {
+  // const params = [P.bvn, P.accountNumber, P.bankCode];
+  // const missing = pExCheck(req.body, params);
+  // if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  // const q = await User.find({ _id: req.user.id });
+  // if (q.length != 1) return next(new AppError(400, 'Account does not exist.'));
+
+  // if (req.body?.[P.assignNuban] == 'yes') {
+  //   const customer = await createPaystackCustomer(req.body[P.email], req.body[P.firstName], req.body[P.lastName], req.body[P.phone]);
+  //   if (!customer?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account number. Kindly login to continue.'));
+  //   await User.updateOne({ _id: q2._id }, { 'paystackCustomer.code': customer.data.customer_code });
+  //   const validate = await validatePaystackCustomer(customer.data.customer_code, req.body[P.firstName], req.body[P.lastName], req.body[P.bvn], req.body[P.accountNumber], req.body[P.bankCode]);
+  //   if (validate.status != 'success') return next(new AppError(201, 'Account created. Unable to validate virtual account credentials. Kindly login to continue.'));
+  //   await User.updateOne({ _id: q2._id }, { 'paystackCustomer.isValidated': true });
+  //   const nuban = await createNUBAN(customer.data.customer_code);
+  //   if (!nuban?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account. Kindly login to continue.'));
+  //   const vaObj = {
+  //     bankName: nuban?.data?.bank?.name,
+  //     bankId: nuban?.data?.bank?.id,
+  //     bankSlug: nuban?.data?.bank?.slug,
+  //     accountName: nuban?.data?.account_name,
+  //     accountNumber: nuban?.data?.account_number,
+  //     currency: nuban?.data?.currency,
+  //     active: nuban?.data?.active,
+  //   };
+  //   await User.updateOne({ _id: q2._id }, { $push: { virtualAccounts: vaObj } });
+  // }
+
+  // res.status(200).json({ status: "success", msg: "Account created. Kindly login." });
+  res.status(200).json({ status: "success", msg: "Endpoint in progress..." });
 });
 
 exports.airtime = catchAsync(async (req, res, next) => {
