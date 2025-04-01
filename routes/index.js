@@ -38,6 +38,9 @@ router.post('/data', auth, base.subData);
 
 router.get('/history', auth, base.listTransactions);
 
+router.get('/banks', auth, base.listBanks);
+router.get('/bank/account-number', auth, base.resolveBankAccount);
+
 router.post('/webhook/paystack', base.paystackWebhook); 
 
 module.exports = router;

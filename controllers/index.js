@@ -837,3 +837,21 @@ exports.purchaseElectricity = catchAsync(async (req, res, next) => {
     res.status(respCode).json(jsonResp);
   });
 });
+
+exports.listBanks = catchAsync(async (req, res, next) => {
+  const resp = await fetch(`${process.env.PAYSTACK_API}/bank`, {
+    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+  });
+  if (resp.status != 200) return next(new AppError(500, 'An error occured.'));
+  const json = await resp.json();
+  res.status(200).json({ status: 'success', msg: 'Banks listed', data: json?.data });
+});
+
+exports.resolveBankAccount = catchAsync(async (req, res, next) => {
+  const resp = await fetch(`${process.env.PAYSTACK_API}/bank/resolve?account_number=${req.query.accountNumber}&bank_code=${req.query.bankCode}`, {
+    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+  });
+  if (resp.status != 200) return next(new AppError(500, 'An error occured.'));
+  const json = await resp.json();
+  res.status(200).json({ status: 'success', msg: 'Banks listed', data: json?.data });
+});
