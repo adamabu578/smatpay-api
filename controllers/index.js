@@ -195,36 +195,50 @@ exports.profile = catchAsync(async (req, res, next) => {
 });
 
 exports.setupVirtualAccount = catchAsync(async (req, res, next) => {
-  // const params = [P.bvn, P.accountNumber, P.bankCode];
-  // const missing = pExCheck(req.body, params);
-  // if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+  const params = [P.bvn, P.accountNumber, P.bankCode];
+  const missing = pExCheck(req.body, params);
+  if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  // const q = await User.find({ _id: req.user.id });
-  // if (q.length != 1) return next(new AppError(400, 'Account does not exist.'));
+  const q = await User.find({ _id: req.user.id });
+  if (q.length != 1) return next(new AppError(400, 'Account does not exist.'));
 
-  // if (req.body?.[P.assignNuban] == 'yes') {
-  //   const customer = await createPaystackCustomer(req.body[P.email], req.body[P.firstName], req.body[P.lastName], req.body[P.phone]);
-  //   if (!customer?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account number. Kindly login to continue.'));
-  //   await User.updateOne({ _id: q2._id }, { 'paystackCustomer.code': customer.data.customer_code });
-  //   const validate = await validatePaystackCustomer(customer.data.customer_code, req.body[P.firstName], req.body[P.lastName], req.body[P.bvn], req.body[P.accountNumber], req.body[P.bankCode]);
-  //   if (validate.status != 'success') return next(new AppError(201, 'Account created. Unable to validate virtual account credentials. Kindly login to continue.'));
-  //   await User.updateOne({ _id: q2._id }, { 'paystackCustomer.isValidated': true });
-  //   const nuban = await createNUBAN(customer.data.customer_code);
-  //   if (!nuban?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account. Kindly login to continue.'));
-  //   const vaObj = {
-  //     bankName: nuban?.data?.bank?.name,
-  //     bankId: nuban?.data?.bank?.id,
-  //     bankSlug: nuban?.data?.bank?.slug,
-  //     accountName: nuban?.data?.account_name,
-  //     accountNumber: nuban?.data?.account_number,
-  //     currency: nuban?.data?.currency,
-  //     active: nuban?.data?.active,
-  //   };
-  //   await User.updateOne({ _id: q2._id }, { $push: { virtualAccounts: vaObj } });
-  // }
+  const user = q[0];
 
-  // res.status(200).json({ status: "success", msg: "Account created. Kindly login." });
-  res.status(200).json({ status: "success", msg: "Endpoint in progress..." });
+  const obj = { paystackCustomer: user?.paystackCustomer };
+
+  if (!obj?.paystackCustomer?.code) {
+    // console.log('setupVirtualAccount ::: createPaystackCustomer');
+    const customer = await createPaystackCustomer(user[P.email], user[P.firstName], user[P.lastName], user[P.phone]);
+    if (!customer?.data) return next(new AppError(500, 'Unable to create customer on Paystack. Kindly try again.'));
+    obj.paystackCustomer = { code: customer.data.customer_code };
+    await User.updateOne({ _id: user._id }, { 'paystackCustomer.code': customer.data.customer_code });
+  }
+  if (!obj?.paystackCustomer?.isValidated && obj?.paystackCustomer?.code) {
+    // console.log('setupVirtualAccount ::: validatePaystackCustomer');
+    const validate = await validatePaystackCustomer(obj.paystackCustomer.code, user[P.firstName], user[P.lastName], req.body[P.bvn], req.body[P.accountNumber], req.body[P.bankCode]);
+    if (validate.status != 'success') return next(new AppError(500, 'Unable to validate credentials. Kindly try again.'));
+    obj.paystackCustomer.isValidated = true;
+    await User.updateOne({ _id: user._id }, { bvn: req.body[P.bvn], accountNumber: req.body[P.accountNumber], bankCode: req.body[P.bankCode], 'paystackCustomer.isValidated': true });
+  }
+  if ((user?.virtualAccounts?.length ?? 0) < 1 && !!obj?.paystackCustomer?.isValidated) {
+    // console.log('setupVirtualAccount ::: createNUBAN');
+    const nuban = await createNUBAN(obj.paystackCustomer.code);
+    if (!nuban?.data) return next(new AppError(500, 'Unable to setup a virtual account at this moment. Kindly try again later.'));
+    const vaObj = {
+      bankName: nuban?.data?.bank?.name,
+      bankId: nuban?.data?.bank?.id,
+      bankSlug: nuban?.data?.bank?.slug,
+      accountName: nuban?.data?.account_name,
+      accountNumber: nuban?.data?.account_number,
+      currency: nuban?.data?.currency,
+      active: nuban?.data?.active,
+    };
+    await User.updateOne({ _id: user._id }, { $push: { virtualAccounts: vaObj } });
+
+    res.status(200).json({ status: "success", msg: "Virtual account created.", data: vaObj });
+  } else {
+    res.status(200).json({ status: "error", msg: "A virtual account already exists for this user." });
+  }
 });
 
 exports.airtime = catchAsync(async (req, res, next) => {
@@ -853,5 +867,5 @@ exports.resolveBankAccount = catchAsync(async (req, res, next) => {
   });
   if (resp.status != 200) return next(new AppError(500, 'An error occured.'));
   const json = await resp.json();
-  res.status(200).json({ status: 'success', msg: 'Banks listed', data: json?.data });
+  res.status(200).json({ status: 'success', msg: 'Account resolved', data: json?.data });
 });
