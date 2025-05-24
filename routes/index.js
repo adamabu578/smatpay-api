@@ -9,8 +9,8 @@ router.post('/signup', base.signUp);
 router.post('/login', base.login);
 
 // router.get('/logout', base.logout);
-// router.post('/password/request', base.sendPwdResetMail);
-// router.post('/password/reset', base.setPassword); 
+router.post('/forgot-password', base.sendPwdResetMail);
+router.post('/reset-password', base.setPassword); 
 
 router.get('/profile', auth, base.profile);
 router.post('/virtual-account', auth, base.setupVirtualAccount);

@@ -32,6 +32,9 @@ const userSchema = new mongoose.Schema({
     token: {
         type: String,
     },
+    resetPwdToken: {
+        type: String,
+    },
     bvn: {
         type: String,
     },
