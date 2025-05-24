@@ -88,8 +88,6 @@ exports.sendEmail = async (email, subject, body, callback) => {
 };
 
 exports.calcCommission = (unitPrice, qty, defaultUnitCommission, userUnitCommission, commissionType) => {
-    // console.log(unitPrice, qty, defaultUnitCommission, userUnitCommission, commissionType);
-    const formatter = new Intl.NumberFormat(DEFAULT_LOCALE, { useGrouping: false, roundingMode: 'floor', maximumFractionDigits: 2 });
     let unitAmt, unitComm;
     if (isNaN(unitPrice) || isNaN(qty) || isNaN(defaultUnitCommission) || isNaN(userUnitCommission)) throw new Error('NaN error');
     const unitCommission = BigNumber(defaultUnitCommission).plus(userUnitCommission);
@@ -98,8 +96,8 @@ exports.calcCommission = (unitPrice, qty, defaultUnitCommission, userUnitCommiss
     if (commissionType == COMMISSION_TYPE.AMOUNT) {
         unitAmt = BigNumber(unitPrice).minus(unitCommission);
         unitComm = unitCommission;
-    } else if (commissionType == COMMISSION_TYPE.RATE) {
-        unitComm = formatter.format((unitPrice * unitCommission) / 100);
+    } else if (commissionType == COMMISSION_TYPE.PERCENT) {
+        unitComm = (BigNumber(unitPrice).multipliedBy(unitCommission)).dividedBy(100);
         unitAmt = BigNumber(unitPrice).minus(unitComm);
     } else {
         throw new Error('Invalid commission');
@@ -229,33 +227,6 @@ exports.afterTransaction = (transactionId, statusCode, json) => {
     if (statusCode == 200 || statusCode == 201) {
         obj.status = TRANSACTION_STATUS.DELIVERED;
         obj.statusDesc = json?.data?.description ?? json?.msg;
-        // if (json?.cards) { //waec result checker
-        //     obj.respObj = {
-        //         pins: json?.cards.map(i => ({ pin: i.Pin, serial: i.Serial }))
-        //     };
-        // }
-        // if (json?.tokens) { //waec registration
-        //     obj.respObj = {
-        //         pins: json?.tokens.map(i => ({ pin: i }))
-        //     };
-        // }
-        // if (json?.Pin) { //utme
-        //     obj.respObj = {
-        //         pins: [{ pin: this.removeAllWhiteSpace(json?.Pin.split(':')[1]) }]
-        //     };
-        // }
-        // if (json?.token) { //electricity
-        //     obj.respObj = {
-        //         token: this.removeAllWhiteSpace(json?.token.split(':')[1])
-        //     };
-        // }
-        // if (json?.purchased_code) { //still electricity. this is just to hold the full value
-        //     obj.respObj = {
-        //         ...obj?.respObj,
-        //         purchased_code: json?.purchased_code
-        //     };
-        // }
-        // respCode = obj.status == TRANSACTION_STATUS.DELIVERED ? 200 : 201;
         respCode = statusCode;
         status = 'success';
         // msg = obj.status == TRANSACTION_STATUS.DELIVERED ? 'Successful' : 'Request initiated';

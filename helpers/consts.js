@@ -9,6 +9,7 @@ exports.TRANSACTION_STATUS = {
 
 exports.COMMISSION_TYPE = {
     AMOUNT: 'amount',
+    PERCENT: 'percent',
 };
 
 exports.REFUND_STATUS = {
@@ -17,4 +18,11 @@ exports.REFUND_STATUS = {
 };
 
 exports.NETWORKS = { 'MTN': 'MTN', 'AIRTEL': 'Airtel', 'GLO': 'Glo', '9MOBILE': 'etisalat' };
+
+exports.COMMISSION = {
+    'airtime': 0.0,
+    'data': 0.0,
+    'electric-ikedc': 0.0,
+    'electric-ekodc': 0.0,
+};
 

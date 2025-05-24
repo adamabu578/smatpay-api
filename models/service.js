@@ -11,11 +11,11 @@ const serviceSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    // commissionType: {
-    //     type: String,
-    //     required: true,
-    //     default: COMMISSION_TYPE.RATE
-    // },
+    commissionType: {
+        type: String,
+        required: true,
+        default: COMMISSION_TYPE.PERCENT
+    },
     vendorUnitCommission: {
         type: Number,
         required: true,

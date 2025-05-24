@@ -21,20 +21,14 @@ router.get('/balance', auth, base.balance);
 router.post('/airtime', auth, base.airtime);
 router.get('/data/bundle/:network', auth, base.listDataBundles);
 router.post('/data', auth, base.subData);
-// router.get('/tv/plans', auth, base.listTVPlans);
-// router.post('/tv/card/verify', auth, base.verifySmartCardNo);
-// router.post('/tv/subscribe', auth, base.tvSub);
-// router.post('/tv/renew', auth, base.tvRenew);
 
-// router.post('/electricity/recipient/verify', auth, base.verifyMeterNo);
-// router.post('/electricity/purchase', auth, base.purchaseElectricity);
+router.get('/tv/plans', auth, base.listTVPlans);
+router.post('/tv/verify-smart-card', auth, base.verifySmartCardNo);
+router.post('/tv/subscribe', auth, base.tvSub);
+router.post('/tv/renew', auth, base.tvRenew);
 
-// router.post('/airtime/to/cash', auth, base.airtime2Cash);
-
-// router.post('/epin/airtime', auth, base.genAirtimePin);
-// router.get('/epin/exam/:serviceCode', auth, base.previewExamPIN); //preview an exam PIN before purchase
-// router.post('/epin/exam/:serviceCode/verify', auth, base.verifyExamInput); //to verify any exam input e.g UTME profile code
-// router.post('/epin/exam', auth, base.buyExamPIN);
+router.post('/electricity/recipient/verify', auth, base.getElectCustomer);
+router.post('/electricity/purchase', auth, base.purchaseElectricity);
 
 router.get('/history', auth, base.listTransactions);
 

@@ -25,6 +25,10 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0.00,
     },
+    commission: {
+        type: Object,
+        default: COMMISSION
+    },
     token: {
         type: String,
     },

@@ -24,6 +24,7 @@ module.exports = {
     serviceId: 'serviceId',
     serviceVariation: 'serviceVariation',
     planId: 'planId',
+    planCode: 'planCode',
     quantity: 'quantity',
     commissionType: 'commissionType',
     denomination: 'denomination',

@@ -315,68 +315,64 @@ exports.subData = catchAsync(async (req, res, next) => {
 });
 
 exports.listTVPlans = catchAsync(async (req, res, next) => {
-  console.log('req.body', req.query);
   const missing = pExCheck(req.query, [P.provider]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const resp = await fetch(`${process.env.VTPASS_API}/service-variations?serviceID=${req.query[P.provider]}`, {
-    // headers: { 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-    headers: { 'api-key': process.env.VTPASS_API_KEY, 'public-key': process.env.VTPASS_PUB_KEY },
+  const resp = await fetch(`${process.env.V24U_API}/tv/plans?provider=${req.query[P.provider]}`, {
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` }
   });
+  // console.log('listTVPlans ::: resp.status :::', resp.status);
+  if (resp.status != 200) return next(new AppError(500, 'Cannot retrieve plans.'));
   const json = await resp.json();
-  if (json?.response_description != '000') return next(new AppError(400, 'Cannot list plans.'));
-
-  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json?.content?.variations ?? json?.content?.varations });
+  // console.log('listTVPlans ::: json :::', json);
+  res.status(200).json({ status: 'success', msg: 'Plans listed', data: json.data });
 });
 
 exports.verifySmartCardNo = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.cardNumber]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const resp = await fetch(`${process.env.VTPASS_API}/merchant-verify`, {
+  const resp = await fetch(`${process.env.V24U_API}/tv/card/verify`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-    body: JSON.stringify({ serviceID: req.body[P.provider], billersCode: req.body[P.cardNumber] }),
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
+    body: JSON.stringify({ provider: req.body[P.provider], cardNumber: req.body[P.cardNumber] }),
   });
+  // console.log('verifySmartCardNo ::: resp.status :::', resp.status);
+  if (resp.status != 200) return next(new AppError(500, 'Cannot verify smartcard number.'));
   const json = await resp.json();
-  if (json?.code != '000') return next(new AppError(500, 'Cannot verify smartcard number.'));
-  if (json?.content?.error) return next(new AppError(400, json?.content?.error));
-
-  res.status(200).json({ status: 'success', msg: 'Smartcard details', data: json?.content });
+  // console.log('verifySmartCardNo ::: json :::', json);
+  res.status(200).json({ status: 'success', msg: 'Smartcard details', data: json.data });
 });
 
 exports.tvSub = catchAsync(async (req, res, next) => {
-  const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.planId, P.amount, P.phone]);
+  const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.planCode, P.amount, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
-
-  const service = await Service.findOne({ code: 'cable-tv' });
-  if (!service) return next(new AppError(500, 'Service error'));
 
   req.body[P.recipient] = req.body[P.cardNumber];
   req.body[P.provider] = req.body[P.provider].toLowerCase();
-  // req.body[P.serviceId] = service._id;
-  // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
-  // req.body[P.commissionKey] = `${req.body[P.provider]}`;
+  
+  const service = await Service.findOne({ code: `tv-${req.body[P.provider]}` });
+  if (!service) return next(new AppError(500, 'Service error'));
 
-  initTransaction(req, service, next, async (transactionId) => {
-    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+  initTransaction(req, service, next, async (transactionId, option) => {
+    const resp = await fetch(`${process.env.V24U_API}/tv/subscribe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
       body: JSON.stringify({
-        request_id: transactionId,
-        serviceID: req.body[P.provider],
-        billersCode: req.body[P.cardNumber],
-        variation_code: req.body[P.planId],
+        provider: req.body[P.provider],
+        cardNumber: req.body[P.cardNumber],
+        planCode: req.body[P.planCode],
         amount: req.body[P.amount],
-        phone: req.body[P.phone],
-        subscription_type: 'change',
-        quantity: 1 //The number of months viewing month e.g 1 (otional)
+        phone: req.body[P.phone]
       }),
     });
+    // console.log('tvSub ::: status :::', resp.status);
     const json = await resp.json();
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    res.status(respCode).json({ status, msg });
-    updateTransaction(obj, req.user.id);
+    // console.log('tvSub ::: JSON :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, resp.status, json);
+    // console.log(respCode, ':::', status, ':::', msg, ':::', obj);
+    res.status(respCode).json({ status, msg, data: json.data });
+    updateTransaction(obj, option);
   });
 });
 
@@ -384,32 +380,30 @@ exports.tvRenew = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.cardNumber, P.amount, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const service = await Service.findOne({ code: 'cable-tv' });
-  if (!service) return next(new AppError(500, 'Service error'));
-
   req.body[P.recipient] = req.body[P.cardNumber];
   req.body[P.provider] = req.body[P.provider].toLowerCase();
-  // req.body[P.serviceId] = service._id;
-  // req.body[P.commissionType] = COMMISSION_TYPE.RATE;
-  // req.body[P.commissionKey] = `${req.body[P.provider]}`;
 
-  initTransaction(req, service, next, async (transactionId) => {
-    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+  const service = await Service.findOne({ code: `tv-${req.body[P.provider]}` });
+  if (!service) return next(new AppError(500, 'Service error'));
+
+  initTransaction(req, service, next, async (transactionId, option) => {
+    const resp = await fetch(`${process.env.V24U_API}/tv/renew`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
       body: JSON.stringify({
-        request_id: transactionId,
-        serviceID: req.body[P.provider],
-        billersCode: req.body[P.cardNumber],
+        provider: req.body[P.provider],
+        cardNumber: req.body[P.cardNumber],
         amount: req.body[P.amount],
-        phone: req.body[P.phone],
-        subscription_type: 'renew'
+        phone: req.body[P.phone]
       }),
     });
+    // console.log('tvRenew ::: status :::', resp.status);
     const json = await resp.json();
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    res.status(respCode).json({ status, msg });
-    updateTransaction(obj, req.user.id);
+    // console.log('tvRenew ::: JSON :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, resp.status, json);
+    // console.log(respCode, ':::', status, ':::', msg, ':::', obj);
+    res.status(respCode).json({ status, msg, data: json.data });
+    updateTransaction(obj, option);
   });
 });
 
@@ -788,68 +782,64 @@ exports.topupInit = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: 'success', msg: 'Balance fetched' });
 });
 
-exports.verifyMeterNo = catchAsync(async (req, res, next) => {
+exports.getElectCustomer = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.type]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const resp = await fetch(`${process.env.VTPASS_API}/merchant-verify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
-    body: JSON.stringify({ serviceID: req.body[P.provider], billersCode: req.body[P.recipient], type: req.body[P.type] }),
-  });
-  const json = await resp.json();
-  if (json?.code != '000') return next(new AppError(500, 'Cannot verify smartcard number.'));
-  if (json?.content?.error) return next(new AppError(400, json?.content?.error));
+  const service = await Service.findOne({ code: `electric-${req.body[P.provider]}` });
+  if (!service) return next(new AppError(500, 'Service error'));
 
-  res.status(200).json({ status: 'success', msg: 'Smartcard details', data: json?.content });
+  const resp = await fetch(`${process.env.V24U_API}/electricity/recipient/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
+    body: JSON.stringify({
+      provider: req.body[P.provider],
+      recipient: req.body[P.recipient],
+      type: req.body[P.type],
+    }),
+  });
+  // console.log('getElectCustomer ::: resp.status :::', resp.status);
+  if (resp.status != 200) return next(new AppError(500, 'Cannot verify customer.'));
+  const json = await resp.json();
+  // console.log('getElectCustomer ::: json :::', json);
+  res.status(200).json({ status: 'success', msg: 'Customer details', data: json.data });
 });
 
 exports.purchaseElectricity = catchAsync(async (req, res, next) => {
+  // console.log('purchaseElectricity ::: req.user :::', req.user);
   const missing = pExCheck(req.body, [P.provider, P.recipient, P.type, P.amount, P.phone]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
-  const service = await Service.findOne({ code: req.body[P.provider] });
-  console.log('service', service);
-  if (!service) return next(new AppError(500, 'Invalid provider'));
+  const service = await Service.findOne({ code: `electric-${req.body[P.provider]}` });
+  if (!service) return next(new AppError(500, 'Service error'));
 
-  // const variations = await getVariations(service?.vendorCode);
-  // if(!variations) return next(new AppError(400, 'Cannot list variations.'));
-
-  // const varationAmount = getAmtFromVariations(variations, req.body[P.variationCode]);
-  // if (!varationAmount) return next(new AppError(400, 'Invalid variation code'));
-  // const amount = calcServicePrice(service, { vendorPrice: varationAmount });
-
-  // if (!req.body?.[P.recipient]) {
-  //   const q = await User.findOne({ role: ROLES.admin }, { uid: 1 });
-  //   req.body[P.recipient] = q.uid.phone;
-  // }
-
-  // req.body[P.amount] = amount;
-  // req.body[P.quantity] = req.body?.[P.quantity] ?? 1;
+  const mResp = await fetch(`${process.env.V24U_API}/electricity/recipient/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
+    body: JSON.stringify({ provider: req.body[P.provider], recipient: req.body[P.recipient], type: req.body[P.type] }),
+  });
+  const mJson = await mResp.json();
+  if (mResp.status != 200) return next(new AppError(500, mJson?.msg ?? 'Cannot verify customer.'));
 
   initTransaction(req, service, next, async (transactionId, option) => {
-    const resp = await fetch(`${process.env.VTPASS_API}/pay`, {
+    const resp = await fetch(`${process.env.V24U_API}/electricity/purchase`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': process.env.VTPASS_API_KEY, 'secret-key': process.env.VTPASS_SECRET_KEY },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.V24U_SECRET}` },
       body: JSON.stringify({
-        request_id: transactionId,
-        // serviceID: service.vendorCode,
-        serviceID: req.body[P.provider],
-        billersCode: req.body[P.recipient],
-        variation_code: req.body[P.type],
+        provider: req.body[P.provider],
+        recipient: req.body[P.recipient],
+        type: req.body[P.type],
         amount: req.body[P.amount],
         phone: req.body[P.phone]
       }),
     });
+    // console.log('purchaseElectricity ::: status :::', resp.status);
     const json = await resp.json();
-    console.log('JSON :::', json);
-    const { respCode, status, msg, obj } = afterTransaction(transactionId, json, VENDORS.VTPASS);
-    updateTransaction(obj, req.user.id);
-    let jsonResp = { status, msg };
-    if (obj?.respObj) {
-      jsonResp.token = obj.respObj.token;
-    }
-    res.status(respCode).json(jsonResp);
+    // console.log('purchaseElectricity ::: JSON :::', json);
+    const { respCode, status, msg, obj } = afterTransaction(transactionId, resp.status, json);
+    // console.log(respCode, ':::', status, ':::', msg, ':::', obj);
+    res.status(respCode).json({ status, msg, data: json.data });
+    updateTransaction(obj, option);
   });
 });
 
