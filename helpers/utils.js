@@ -3,7 +3,7 @@ const puppeteer = require('puppeteer');
 const nodemailer = require("nodemailer");
 const { default: BigNumber } = require('bignumber.js');
 
-const { COMMISSION_TYPE } = require('./consts');
+const { COMMISSION_TYPE, NUBAN_PROVIDER } = require('./consts');
 const { REFUND_STATUS, TRANSACTION_STATUS } = require("./consts");
 const { vEvent, VEVENT_GIVE_BONUS_IF_APPLICABLE } = require("../event/class");
 
@@ -264,6 +264,20 @@ exports.createPDF = async (filename, html) => {
     }
 }
 
+exports.createPayscribeCustomer = async (email, firstName, lastName, phone) => {
+    const resp = await fetch(`${process.env.PAYSCRIBE_API}/customers/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.PAYSCRIBE_PUBLIC_KEY}` },
+        body: JSON.stringify({ first_name: firstName, last_name: lastName, phone, email })
+    });
+    console.log('createPayscribeCustomer ::: resp.status :::', resp.status);
+    if (resp.status != 200) return { status: false };
+    const json = await resp.json();
+    // if (!json.status) return null;
+    console.log('createPayscribeCustomer ::: json :::', json);
+    return json;
+}
+
 exports.createPaystackCustomer = async (email, firstName, lastName, phone) => {
     const resp = await fetch(`${process.env.PAYSTACK_API}/customer`, {
         method: 'POST',
@@ -304,18 +318,56 @@ exports.validatePaystackCustomer = async (cuid, firstName, lastName, bvn, accoun
     return { status: 'success' };
 }
 
-exports.createNUBAN = async (customerCode, options = { preferredBank: process.env.PAYSTACK_VA_PREFERRED_BANK }) => {
-    const resp = await fetch(`${process.env.PAYSTACK_API}/dedicated_account`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
-        body: JSON.stringify({
-            customer: customerCode,
+exports.createNUBAN = async (customerID, options = { provider: NUBAN_PROVIDER.PAYSCRIBE, preferredBank: process.env.PAYSTACK_VA_PREFERRED_BANK }) => {
+    let url, bearer, body = {};
+    if (options?.provider == NUBAN_PROVIDER.PAYSCRIBE) {
+        url = `${process.env.PAYSCRIBE_API}/collections/virtual-accounts/create`;
+        bearer = process.env.PAYSCRIBE_PUBLIC_KEY;
+        body = {
+            account_type: 'static',
+            // currency: 'NGN',
+            customer_id: customerID,
+            bank: ["9psb"]
+        };
+    } else if (options?.provider == NUBAN_PROVIDER.PAYSTACK) {
+        url = `${process.env.PAYSTACK_API}/dedicated_account`;
+        bearer = process.env.PAYSTACK_SECRET_KEY;
+        body = {
+            customer: customerID,
             preferred_bank: options.preferredBank, // "wema-bank" "titan-paystack"
-        })
+        };
+    }
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bearer}` },
+        body: JSON.stringify(body)
     });
     // console.log('createNUBAN ::: resp.status :::', resp.status);
-    if (resp.status != 200) return { status: false };
+    // if (resp.status != 200) return { status: false };
     const json = await resp.json();
     // console.log('createNUBAN ::: json :::', json);
-    return json;
+    if (options?.provider == NUBAN_PROVIDER.PAYSCRIBE && json?.message?.details?.account) {
+        return {
+            bankName: json?.message?.details?.account[0].bank_name,
+            bankId: json?.message?.details?.account[0].bank_code,
+            // bankSlug: json?.message?.details?.account[0].,
+            accountName: json?.message?.details?.account[0].account_name,
+            accountNumber: json?.message?.details?.account[0].account_number,
+            currency: json?.message?.details?.account[0].currency,
+            type: json?.message?.details?.account[0].account_type,
+            provider: options.provider,
+        };
+    } else if (options?.provider == NUBAN_PROVIDER.PAYSTACK && json?.data) {
+        return {
+            bankName: json?.data?.bank?.name,
+            bankId: json?.data?.bank?.id,
+            bankSlug: json?.data?.bank?.slug,
+            accountName: json?.data?.account_name,
+            accountNumber: json?.data?.account_number,
+            currency: json?.data?.currency,
+            active: json?.data?.active,
+            provider: options.provider,
+        }
+    }
+    return null;
 }

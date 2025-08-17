@@ -17,6 +17,11 @@ exports.REFUND_STATUS = {
     REFUNDED: 'refunded',
 };
 
+exports.NUBAN_PROVIDER = {
+    PAYSCRIBE: 'payscribe',
+    PAYSTACK: 'paystack',
+};
+
 exports.NETWORKS = { 'MTN': 'MTN', 'AIRTEL': 'Airtel', 'GLO': 'Glo', '9MOBILE': 'etisalat' };
 
 exports.COMMISSION = {

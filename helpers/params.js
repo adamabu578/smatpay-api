@@ -7,6 +7,7 @@ module.exports = {
     telegramNumber: 'telegramNumber',
     password: 'password',
     assignNuban: 'assignNuban',
+    nubanProvider: 'nubanProvider',
     bvn: 'bvn',
     accountNumber: 'accountNumber',
     bankCode: 'bankCode',

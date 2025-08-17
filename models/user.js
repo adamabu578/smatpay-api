@@ -50,6 +50,11 @@ const userSchema = new mongoose.Schema({
             isValidated: { type: Boolean, default: false },
         },
     },
+    payscribeCustomer: {
+        type: {
+            id: { type: String },
+        },
+    },
     virtualAccounts: [
         {
             bankName: { type: String },
@@ -59,6 +64,8 @@ const userSchema = new mongoose.Schema({
             accountNumber: { type: String },
             currency: { type: String },
             active: { type: Boolean },
+            type: { type: String },
+            provider: { type: String, required: true },
         }
     ],
     password: {

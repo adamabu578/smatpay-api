@@ -13,9 +13,9 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, initTransaction, updateTransaction, afterTransaction, getServiceVariations, getAmtFromVariations, createNUBAN, createPaystackCustomer, validatePaystackCustomer, genRefNo, sendEmail } = require("../helpers/utils");
+const { pExCheck, initTransaction, updateTransaction, afterTransaction, getServiceVariations, getAmtFromVariations, createNUBAN, createPaystackCustomer, validatePaystackCustomer, genRefNo, sendEmail, createPayscribeCustomer } = require("../helpers/utils");
 const Service = require("../models/service");
-const { DEFAULT_LOCALE, TIMEZONE, TRANSACTION_STATUS } = require("../helpers/consts");
+const { DEFAULT_LOCALE, TIMEZONE, TRANSACTION_STATUS, NUBAN_PROVIDER } = require("../helpers/consts");
 
 exports.paystackWebhook = catchAsync(async (req, res, next) => {
   res.sendStatus(200);
@@ -56,7 +56,7 @@ exports.paystackWebhook = catchAsync(async (req, res, next) => {
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const params = [P.firstName, P.lastName, P.email, P.phone, P.password];
-  if (req.body?.[P.assignNuban] == 'yes') {
+  if (req.body?.[P.assignNuban] == 'yes' && req.body?.[P.nubanProvider] == NUBAN_PROVIDER.PAYSTACK) {
     params.push(P.bvn);
     params.push(P.accountNumber);
     params.push(P.bankCode);
@@ -89,24 +89,19 @@ exports.signUp = catchAsync(async (req, res, next) => {
   if (!q2) return next(new AppError(500, 'Could not create account.'));
 
   if (req.body?.[P.assignNuban] == 'yes') {
-    const customer = await createPaystackCustomer(req.body[P.email], req.body[P.firstName], req.body[P.lastName], req.body[P.phone]);
-    if (!customer?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account number. Kindly login to continue.'));
-    await User.updateOne({ _id: q2._id }, { 'paystackCustomer.code': customer.data.customer_code });
-    const validate = await validatePaystackCustomer(customer.data.customer_code, req.body[P.firstName], req.body[P.lastName], req.body[P.bvn], req.body[P.accountNumber], req.body[P.bankCode]);
-    if (validate.status != 'success') return next(new AppError(201, 'Account created. Unable to validate virtual account credentials. Kindly login to continue.'));
-    await User.updateOne({ _id: q2._id }, { 'paystackCustomer.isValidated': true });
-    const nuban = await createNUBAN(customer.data.customer_code);
-    if (!nuban?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account. Kindly login to continue.'));
-    const vaObj = {
-      bankName: nuban?.data?.bank?.name,
-      bankId: nuban?.data?.bank?.id,
-      bankSlug: nuban?.data?.bank?.slug,
-      accountName: nuban?.data?.account_name,
-      accountNumber: nuban?.data?.account_number,
-      currency: nuban?.data?.currency,
-      active: nuban?.data?.active,
-    };
-    await User.updateOne({ _id: q2._id }, { $push: { virtualAccounts: vaObj } });
+    // const customer = await createPaystackCustomer(req.body[P.email], req.body[P.firstName], req.body[P.lastName], req.body[P.phone]);
+    const customer = await createPayscribeCustomer(req.body[P.email], req.body[P.firstName], req.body[P.lastName], req.body[P.phone]);
+    // if (!customer?.data) return next(new AppError(201, 'Account created. Unable to setup virtual account number. Kindly login to continue.'));
+    if (!customer?.message?.details?.customer_id) return next(new AppError(201, 'Account created. Unable to setup virtual account number. Kindly login to continue.'));
+    // await User.updateOne({ _id: q2._id }, { 'paystackCustomer.code': customer.data.customer_code });
+    await User.updateOne({ _id: q2._id }, { 'payscribeCustomer.id': customer.message.details.customer_id });
+    // const validate = await validatePaystackCustomer(customer.data.customer_code, req.body[P.firstName], req.body[P.lastName], req.body[P.bvn], req.body[P.accountNumber], req.body[P.bankCode]);
+    // if (validate.status != 'success') return next(new AppError(201, 'Account created. Unable to validate virtual account credentials. Kindly login to continue.'));
+    // await User.updateOne({ _id: q2._id }, { 'paystackCustomer.isValidated': true });
+    // const nuban = await createNUBAN(customer.data.customer_code);
+    const nuban = await createNUBAN(customer.message.details.customer_id);
+    if (!nuban) return next(new AppError(201, 'Account created. Unable to setup virtual account. Kindly login to continue.'));
+    await User.updateOne({ _id: q2._id }, { $push: { virtualAccounts: nuban } });
   }
 
   res.status(200).json({ status: "success", msg: "Account created. Kindly login." });
@@ -201,50 +196,65 @@ exports.profile = catchAsync(async (req, res, next) => {
 });
 
 exports.setupVirtualAccount = catchAsync(async (req, res, next) => {
-  const params = [P.bvn, P.accountNumber, P.bankCode];
+  const params = [];
+  if (req.body?.[P.nubanProvider] == NUBAN_PROVIDER.PAYSTACK) {
+    params.push(P.bvn);
+    params.push(P.accountNumber);
+    params.push(P.bankCode);
+  }
   const missing = pExCheck(req.body, params);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
+
+  const provider = req.body?.[P.nubanProvider] ?? NUBAN_PROVIDER.PAYSCRIBE;
 
   const q = await User.find({ _id: req.user.id });
   if (q.length != 1) return next(new AppError(400, 'Account does not exist.'));
 
   const user = q[0];
 
-  const obj = { paystackCustomer: user?.paystackCustomer };
+  if (user?.virtualAccounts?.filter(i => i.provider == provider).length > 0) return next(new AppError(400, 'A virtual account already exists for this user.'));
 
-  if (!obj?.paystackCustomer?.code) {
+  const obj = { paystackCustomer: user?.paystackCustomer, payscribeCustomer: user?.payscribeCustomer };
+
+  if (provider == NUBAN_PROVIDER.PAYSTACK && !obj?.paystackCustomer?.code) {
     // console.log('setupVirtualAccount ::: createPaystackCustomer');
     const customer = await createPaystackCustomer(user[P.email], user[P.firstName], user[P.lastName], user[P.phone]);
     if (!customer?.data) return next(new AppError(500, 'Unable to create customer on Paystack. Kindly try again.'));
     obj.paystackCustomer = { code: customer.data.customer_code };
     await User.updateOne({ _id: user._id }, { 'paystackCustomer.code': customer.data.customer_code });
   }
-  if (!obj?.paystackCustomer?.isValidated && obj?.paystackCustomer?.code) {
+  if (provider == NUBAN_PROVIDER.PAYSTACK && !obj?.paystackCustomer?.isValidated && obj?.paystackCustomer?.code) {
     // console.log('setupVirtualAccount ::: validatePaystackCustomer');
     const validate = await validatePaystackCustomer(obj.paystackCustomer.code, user[P.firstName], user[P.lastName], req.body[P.bvn], req.body[P.accountNumber], req.body[P.bankCode]);
     if (validate.status != 'success') return next(new AppError(500, 'Unable to validate credentials. Kindly try again.'));
     obj.paystackCustomer.isValidated = true;
     await User.updateOne({ _id: user._id }, { bvn: req.body[P.bvn], accountNumber: req.body[P.accountNumber], bankCode: req.body[P.bankCode], 'paystackCustomer.isValidated': true });
   }
-  if ((user?.virtualAccounts?.length ?? 0) < 1 && !!obj?.paystackCustomer?.isValidated) {
-    // console.log('setupVirtualAccount ::: createNUBAN');
-    const nuban = await createNUBAN(obj.paystackCustomer.code);
-    if (!nuban?.data) return next(new AppError(500, 'Unable to setup a virtual account at this moment. Kindly try again later.'));
-    const vaObj = {
-      bankName: nuban?.data?.bank?.name,
-      bankId: nuban?.data?.bank?.id,
-      bankSlug: nuban?.data?.bank?.slug,
-      accountName: nuban?.data?.account_name,
-      accountNumber: nuban?.data?.account_number,
-      currency: nuban?.data?.currency,
-      active: nuban?.data?.active,
-    };
-    await User.updateOne({ _id: user._id }, { $push: { virtualAccounts: vaObj } });
+  if (provider == NUBAN_PROVIDER.PAYSTACK && !obj?.paystackCustomer?.isValidated) return next(new AppError(500, 'Unable to validate customer. Kindly try again.'));
 
-    res.status(200).json({ status: "success", msg: "Virtual account created.", data: vaObj });
-  } else {
-    res.status(200).json({ status: "error", msg: "A virtual account already exists for this user." });
+  if (provider == NUBAN_PROVIDER.PAYSCRIBE && !obj?.payscribeCustomer?.id) {
+    // console.log('setupVirtualAccount ::: createPayscribeCustomer');
+    const customer = await createPayscribeCustomer(user[P.email], user[P.firstName], user[P.lastName], user[P.phone]);
+    if (!customer?.message?.details?.customer_id) return next(new AppError(500, 'Unable to create customer on Payscribe. Kindly try again.'));
+    obj.payscribeCustomer = { id: customer.message.details.customer_id };
+    await User.updateOne({ _id: user._id }, { 'payscribeCustomer.id': customer.message.details.customer_id });
   }
+
+  let customerID;
+  if (provider == NUBAN_PROVIDER.PAYSCRIBE && obj?.payscribeCustomer?.id) {
+    customerID = obj.payscribeCustomer.id;
+  } else if (provider == NUBAN_PROVIDER.PAYSTACK && obj?.paystackCustomer?.code) {
+    customerID = obj.paystackCustomer.code;
+  }
+  console.log('customerID :::', customerID);
+  if (!customerID) return next(new AppError(500, 'Unable to create customer. Kindly try again.'));
+
+  // console.log('setupVirtualAccount ::: createNUBAN');
+  const nuban = await createNUBAN(customerID);
+  if (!nuban) return next(new AppError(500, 'Unable to setup a virtual account at this moment. Kindly try again later.'));
+  await User.updateOne({ _id: user._id }, { $push: { virtualAccounts: nuban } });
+
+  res.status(200).json({ status: "success", msg: "Virtual account created.", data: nuban });
 });
 
 exports.airtime = catchAsync(async (req, res, next) => {
