@@ -54,6 +54,49 @@ exports.paystackWebhook = catchAsync(async (req, res, next) => {
   }
 });
 
+exports.payscribeWebhook = catchAsync(async (req, res, next) => {
+  res.sendStatus(200);
+
+  const body = req.body;
+  if (body.event_type == "accounts.payment.status") {
+    const combination = `${process.env.PAYSCRIBE_SECRET_KEY}.${body?.transaction?.sender_account}.${body?.customer?.number}.${body?.transaction?.bank_code}.${body?.amount}.${body?.trans_id}`;
+    const hash = crypto.hash('sha512', combination);
+    if (hash == body?.transaction_hash) {
+      // console.log('body?.data?.metadata', body?.data?.metadata);
+      const amount = body.amount;
+      const totalAmount = amount;
+      const q = await User.find({ 'payscribeCustomer.id': body?.customer?.id, 'virtualAccounts.accountNumber': body?.customer?.number });
+      if (q?.length == 1) {
+        const user = q[0];
+
+        const q0 = await Transaction.find({ userId: user._id, 'meta.reference': body?.trans_id });
+        if (q0.length == 0) {
+          const q2 = await Service.findOne({ code: 'wallet-topup' }, { _id: 1 });
+          const session = await mongoose.startSession();
+          try {
+            const transactionId = genRefNo();
+            session.startTransaction();
+            const q3 = await User.updateOne({ _id: user._id }, { $inc: { balance: totalAmount } }).session(session);
+            // console.log('q3 :::', q3);
+            const meta = { reference: body?.trans_id };
+            const q4 = await Transaction.create([{ userId: user._id, transactionId, serviceId: q2._id, recipient: 'wallet', unitPrice: amount, quantity: 1, amount, totalAmount, status: TRANSACTION_STATUS.DELIVERED, statusDesc: 'Wallet topup', meta }], { session });
+            // console.log('q4 :::', q4);
+            if (q3?.modifiedCount == 1 && q4?.length > 0) {
+              await session.commitTransaction();
+            }
+          } catch (error) {
+            await session.abortTransaction();
+            console.error('Error during transaction:', error);
+          } finally {
+            session.endSession();
+          }
+        }
+
+      }
+    }
+  }
+});
+
 exports.signUp = catchAsync(async (req, res, next) => {
   const params = [P.firstName, P.lastName, P.email, P.phone, P.password];
   if (req.body?.[P.assignNuban] == 'yes' && req.body?.[P.nubanProvider] == NUBAN_PROVIDER.PAYSTACK) {

@@ -35,6 +35,7 @@ router.get('/history', auth, base.listTransactions);
 router.get('/banks', base.listBanks);
 router.get('/bank/account-number', base.resolveBankAccount);
 
-router.post('/webhook/paystack', base.paystackWebhook); 
+router.post('/webhook/paystack', base.paystackWebhook);
+router.post('/webhook/payscribe', base.payscribeWebhook); 
 
 module.exports = router;
