@@ -63,7 +63,13 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
     console.log('payscribeWebhook ::: 2');
     const combination = `${process.env.PAYSCRIBE_SECRET_KEY}.${body?.transaction?.sender_account}.${body?.customer?.number}.${body?.transaction?.bank_code}.${body?.amount}.${body?.trans_id}`;
     console.log('payscribeWebhook ::: 3', combination);
-    const hash = crypto.hash('sha512', combination);
+
+    // const hash = crypto.hash('sha512', combination);
+    const _hash = crypto.createHash('sha512');
+    _hash.update(combination, 'utf8');
+    const hash = _hash.digest('hex');
+    console.log('payscribeWebhook ::: 3.1', _hash.digest('base64'));
+
     console.log('payscribeWebhook ::: 4', hash);
     if (hash == body?.transaction_hash) {
       // console.log('body?.data?.metadata', body?.data?.metadata);
@@ -249,6 +255,18 @@ exports.profile = catchAsync(async (req, res, next) => {
       $project: { _id: 0 }
     }
   ]);
+  // if (q?.length > 1) {
+  //   const resp = await fetch(`${process.env.PAYSCRIBE_API}/collections/virtual-accounts/{CUSTOMER ID}`, {
+  //     method: 'GET',
+  //     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.PAYSCRIBE_PUBLIC_KEY}` },
+  //     body: JSON.stringify({ first_name: firstName, last_name: lastName, phone, email })
+  //   });
+  //   console.log('createPayscribeCustomer ::: resp.status :::', resp.status);
+  //   if (resp.status != 200) return { status: false };
+  //   const json = await resp.json();
+  //   // if (!json.status) return null;
+  //   console.log('createPayscribeCustomer ::: json :::', json);
+  // }
 
   res.status(200).json({ status: 'success', msg: 'Profile fetched', data: q[0] });
 });
