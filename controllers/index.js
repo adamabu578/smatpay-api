@@ -67,7 +67,7 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
     // const hash = crypto.hash('sha512', combination);
     const _hash = crypto.createHash('sha512');
     _hash.update(combination, 'utf8');
-    const hash = _hash.digest('hex');
+    const hash = _hash.digest('base64'); //_hash.digest('hex');
     // console.log('payscribeWebhook ::: 3.1', _hash.digest('base64'));
 
     console.log('payscribeWebhook ::: 4', hash);
