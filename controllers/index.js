@@ -61,14 +61,14 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
   console.log('payscribeWebhook ::: 1', body);
   if (body.event_type == "accounts.payment.status") {
     console.log('payscribeWebhook ::: 2');
-    const combination = `${process.env.PAYSCRIBE_SECRET_KEY}.${body?.transaction?.sender_account}.${body?.customer?.number}.${body?.transaction?.bank_code}.${body?.amount}.${body?.trans_id}`;
+    const combination = `${process.env.PAYSCRIBE_SECRET_KEY}.${body?.transaction?.sender_account}.${body?.customer?.number}.${body?.transaction?.bank_code}.${'50.00'}.${body?.trans_id}`;
     console.log('payscribeWebhook ::: 3', combination);
 
-    // const hash = crypto.hash('sha512', combination);
-    const _hash = crypto.createHash('sha512');
-    _hash.update(combination, 'utf8');
-    const hash = _hash.digest('base64'); //_hash.digest('hex');
-    // console.log('payscribeWebhook ::: 3.1', _hash.digest('base64'));
+    const hash = crypto.hash('sha512', combination);
+    // const _hash = crypto.createHash('sha512');
+    // _hash.update(combination, 'utf8');
+    // const hash = _hash.digest('base64'); //_hash.digest('hex');
+    // // console.log('payscribeWebhook ::: 3.1', _hash.digest('base64'));
 
     console.log('payscribeWebhook ::: 4', hash);
     if (hash == body?.transaction_hash) {
