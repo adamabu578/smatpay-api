@@ -68,7 +68,7 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
     const sha512Hash = CryptoJS.SHA512(combination).toString().toUpperCase();
 
     // Log the computed hash for debugging
-    console.log("Sha512 Hash :: ", sha512Hash);
+    console.log("Sha512 Hash :: ", sha512Hash); 
 
     // const hash = crypto.hash('sha512', combination); 
     // const _hash = crypto.createHash('sha512');
