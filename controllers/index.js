@@ -4,7 +4,8 @@ const fetch = require('node-fetch');
 const { uid } = require("uid");
 const { default: mongoose } = require("mongoose");
 
-const crypto = require('node:crypto');
+// const crypto = require('node:crypto');
+const CryptoJS = require('crypto-js');
 
 const catchAsync = require("../helpers/catchAsync");
 
@@ -64,14 +65,19 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
     const combination = `${process.env.PAYSCRIBE_SECRET_KEY}.${body?.transaction?.sender_account}.${body?.customer?.number}.${body?.transaction?.bank_code}.${'50.00'}.${body?.trans_id}`;
     console.log('payscribeWebhook ::: 3', combination);
 
-    const hash = crypto.hash('sha512', combination); 
+    const sha512Hash = CryptoJS.SHA512(combination).toString().toUpperCase();
+
+    // Log the computed hash for debugging
+    console.log("Sha512 Hash :: ", sha512Hash);
+
+    // const hash = crypto.hash('sha512', combination); 
     // const _hash = crypto.createHash('sha512');
     // _hash.update(combination, 'utf8');
     // const hash = _hash.digest('base64'); //_hash.digest('hex');
     // // console.log('payscribeWebhook ::: 3.1', _hash.digest('base64'));
 
-    console.log('payscribeWebhook ::: 4', hash);
-    if (hash == body?.transaction_hash) {
+    console.log('payscribeWebhook ::: 4', sha512Hash);
+    if (sha512Hash == body?.transaction_hash) {
       // console.log('body?.data?.metadata', body?.data?.metadata);
       const amount = body.amount;
       console.log('payscribeWebhook ::: 5', amount);
