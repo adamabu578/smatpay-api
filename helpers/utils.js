@@ -18,6 +18,12 @@ exports.nairaFormatter = Intl.NumberFormat('en-NG', {
     currency: 'NGN',
 });
 
+exports.currencyFormatter = new Intl.NumberFormat('en-NG', {
+    style: 'decimal',
+    minimumFractionDigits: 2, // Ensure at least 2 decimal places
+    maximumFractionDigits: 2  // Ensure no more than 2 decimal places
+});
+
 exports.pExCheck = (reqParams, array) => {
     let resp = [];
     reqParams = JSON.parse(JSON.stringify(reqParams));
