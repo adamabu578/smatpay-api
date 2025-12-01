@@ -64,14 +64,14 @@ exports.sendEmail = async (email, subject, body, callback) => {
         const transporter = nodemailer.createTransport({
             host: process.env.MAIL_HOST,
             port: process.env.MAIL_PORT,
-            secure: true,
+            secure: false,
             auth: {
                 user: process.env.MAIL_USER,
                 pass: process.env.MAIL_PWD,
             },
         });
         const fields = {
-            from: `"SmatPay" <${process.env.MAIL_USER}>`, to: email, subject: subject, html: body,
+            from: `"SmatPay" <${process.env.MAIL_SENDER}>`, to: email, subject: subject, html: body,
             // dsn: {
             //     id: 'some random message specific id',
             //     return: 'headers',
