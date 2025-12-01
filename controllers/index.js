@@ -65,7 +65,7 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
     const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${'50.00'}${body?.trans_id}`;
     console.log('payscribeWebhook ::: 3', combination);
 
-    const sha512Hash = CryptoJS.SHA512(combination).toString().toUpperCase();
+    const sha512Hash = CryptoJS.SHA512(combination).toString().toUpperCase();  
 
     // Log the computed hash for debugging
     console.log("Sha512 Hash :: ", sha512Hash); 
