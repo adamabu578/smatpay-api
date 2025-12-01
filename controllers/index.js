@@ -5,7 +5,6 @@ const { uid } = require("uid");
 const { default: mongoose } = require("mongoose");
 
 const crypto = require('node:crypto');
-// const CryptoJS = require('crypto-js');
 
 const catchAsync = require("../helpers/catchAsync");
 
@@ -14,7 +13,7 @@ const User = require("../models/user");
 
 const P = require('../helpers/params');
 const AppError = require("../helpers/AppError");
-const { pExCheck, initTransaction, updateTransaction, afterTransaction, getServiceVariations, getAmtFromVariations, createNUBAN, createPaystackCustomer, validatePaystackCustomer, genRefNo, sendEmail, createPayscribeCustomer } = require("../helpers/utils");
+const { pExCheck, initTransaction, updateTransaction, afterTransaction, getServiceVariations, getAmtFromVariations, createNUBAN, createPaystackCustomer, validatePaystackCustomer, genRefNo, sendEmail, createPayscribeCustomer, currencyFormatter } = require("../helpers/utils");
 const Service = require("../models/service");
 const { DEFAULT_LOCALE, TIMEZONE, TRANSACTION_STATUS, NUBAN_PROVIDER } = require("../helpers/consts");
 
@@ -62,25 +61,15 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
   console.log('payscribeWebhook ::: 1', body);
   if (body.event_type == "accounts.payment.status") {
     console.log('payscribeWebhook ::: 2');
-    const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${'50.00'}${body?.trans_id}`;
+    const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${currencyFormatter.format(body.amount)}${body?.trans_id}`;
     console.log('payscribeWebhook ::: 3', combination);
-
-    // const sha512Hash = CryptoJS.SHA512(combination).toString().toUpperCase();
-
-    // const hash = crypto.hash('sha512', combination); 
 
     const hash = crypto.createHash('sha512');
     hash.update(combination, 'utf8');
     const sha512Hash = hash.digest('hex').toUpperCase();
 
-    // const _hash = crypto.createHash('sha512');
-    // _hash.update(combination, 'utf8');
-    // const hash = _hash.digest('base64'); //_hash.digest('hex');
-    // // console.log('payscribeWebhook ::: 3.1', _hash.digest('base64'));
-
     console.log('payscribeWebhook ::: 4', sha512Hash);
     if (sha512Hash == body?.transaction_hash) {
-      // console.log('body?.data?.metadata', body?.data?.metadata);
       const amount = body.amount;
       console.log('payscribeWebhook ::: 5', amount);
       const totalAmount = amount;
