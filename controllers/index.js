@@ -58,32 +58,42 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
   res.sendStatus(200);
 
   const body = req.body;
+  console.log('payscribeWebhook ::: body :::', body);
   if (body.event_type == "accounts.payment.status") {
+    console.log('payscribeWebhook ::: 1');
     const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${currencyFormatter.format(body.amount)}${body?.trans_id}`;
 
     const hash = crypto.createHash('sha512');
     hash.update(combination, 'utf8');
     const sha512Hash = hash.digest('hex').toUpperCase();
+    console.log('payscribeWebhook ::: sha512Hash :::', sha512Hash);
 
     if (sha512Hash == body?.transaction_hash) {
+      console.log('payscribeWebhook ::: 2');
       const amount = body.amount;
       const totalAmount = amount;
       const q = await User.find({ 'payscribeCustomer.id': body?.customer?.id, 'virtualAccounts.accountNumber': body?.customer?.number });
+      console.log('payscribeWebhook ::: q :::', q);
       if (q?.length == 1) {
         const user = q[0];
 
         const q0 = await Transaction.find({ userId: user._id, 'meta.reference': body?.trans_id });
+        console.log('payscribeWebhook ::: q0 :::', q0);
         if (q0.length == 0) {
+          console.log('payscribeWebhook ::: 3');
           const q2 = await Service.findOne({ code: 'wallet-topup' }, { _id: 1 });
           const session = await mongoose.startSession();
           try {
             const transactionId = genRefNo();
             session.startTransaction();
             const q3 = await User.updateOne({ _id: user._id }, { $inc: { balance: totalAmount } }).session(session);
+            console.log('payscribeWebhook ::: q3 :::', q3);
             const meta = { reference: body?.trans_id };
             const q4 = await Transaction.create([{ userId: user._id, transactionId, serviceId: q2._id, recipient: 'wallet', unitPrice: amount, quantity: 1, amount, totalAmount, status: TRANSACTION_STATUS.DELIVERED, statusDesc: 'Wallet topup', meta }], { session });
+            console.log('payscribeWebhook ::: q4 :::', q4);
             // console.log('q4 :::', q4);
             if (q3?.modifiedCount == 1 && q4?.length > 0) {
+              console.log('payscribeWebhook ::: 4');
               await session.commitTransaction();
             }
           } catch (error) {
