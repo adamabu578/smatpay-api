@@ -54,58 +54,132 @@ exports.paystackWebhook = catchAsync(async (req, res, next) => {
   }
 });
 
+// exports.payscribeWebhook = catchAsync(async (req, res, next) => {
+//   res.sendStatus(200);
+
+//   const body = req.body;
+//   console.log('payscribeWebhook ::: body :::', body);
+//   if (body.event_type == "accounts.payment.status") {
+//     console.log('payscribeWebhook ::: 1');
+//     const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${currencyFormatter.format(body.amount)}${body?.trans_id}`;
+
+//     const hash = crypto.createHash('sha512');
+//     hash.update(combination, 'utf8');
+//     const sha512Hash = hash.digest('hex').toUpperCase();
+//     console.log('payscribeWebhook ::: sha512Hash :::', sha512Hash);
+
+//     if (sha512Hash == body?.transaction_hash) {
+//       console.log('payscribeWebhook ::: 2');
+//       const amount = body.amount;
+//       const totalAmount = amount;
+//       const q = await User.find({ 'payscribeCustomer.id': body?.customer?.id, 'virtualAccounts.accountNumber': body?.customer?.number });
+//       console.log('payscribeWebhook ::: q :::', q);
+//       if (q?.length == 1) {
+//         const user = q[0];
+
+//         const q0 = await Transaction.find({ userId: user._id, 'meta.reference': body?.trans_id });
+//         console.log('payscribeWebhook ::: q0 :::', q0);
+//         if (q0.length == 0) {
+//           console.log('payscribeWebhook ::: 3');
+//           const q2 = await Service.findOne({ code: 'wallet-topup' }, { _id: 1 });
+//           const session = await mongoose.startSession();
+//           try {
+//             const transactionId = genRefNo();
+//             session.startTransaction();
+//             const q3 = await User.updateOne({ _id: user._id }, { $inc: { balance: totalAmount } }).session(session);
+//             console.log('payscribeWebhook ::: q3 :::', q3);
+//             const meta = { reference: body?.trans_id };
+//             const q4 = await Transaction.create([{ userId: user._id, transactionId, serviceId: q2._id, recipient: 'wallet', unitPrice: amount, quantity: 1, amount, totalAmount, status: TRANSACTION_STATUS.DELIVERED, statusDesc: 'Wallet topup', meta }], { session });
+//             console.log('payscribeWebhook ::: q4 :::', q4);
+//             // console.log('q4 :::', q4);
+//             if (q3?.modifiedCount == 1 && q4?.length > 0) {
+//               console.log('payscribeWebhook ::: 4');
+//               await session.commitTransaction();
+//             }
+//           } catch (error) {
+//             await session.abortTransaction();
+//             console.error('Error during transaction:', error);
+//           } finally {
+//             session.endSession();
+//           }
+//         }
+
+//       }
+//     }
+//   }
+// });
 exports.payscribeWebhook = catchAsync(async (req, res, next) => {
+  // 1. Acknowledge receipt immediately to stop the webhook provider from retrying
   res.sendStatus(200);
 
   const body = req.body;
-  console.log('payscribeWebhook ::: body :::', body);
-  if (body.event_type == "accounts.payment.status") {
-    console.log('payscribeWebhook ::: 1');
-    const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${currencyFormatter.format(body.amount)}${body?.trans_id}`;
+  if (body.event_type !== "accounts.payment.status") return;
 
-    const hash = crypto.createHash('sha512');
-    hash.update(combination, 'utf8');
-    const sha512Hash = hash.digest('hex').toUpperCase();
-    console.log('payscribeWebhook ::: sha512Hash :::', sha512Hash);
+  // 2. Hash Verification
+  const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${currencyFormatter.format(body.amount)}${body?.trans_id}`;
+  const sha512Hash = crypto.createHash('sha512').update(combination, 'utf8').digest('hex').toUpperCase();
 
-    if (sha512Hash == body?.transaction_hash) {
-      console.log('payscribeWebhook ::: 2');
-      const amount = body.amount;
-      const totalAmount = amount;
-      const q = await User.find({ 'payscribeCustomer.id': body?.customer?.id, 'virtualAccounts.accountNumber': body?.customer?.number });
-      console.log('payscribeWebhook ::: q :::', q);
-      if (q?.length == 1) {
-        const user = q[0];
+  if (sha512Hash !== body?.transaction_hash) {
+    console.error('Hash mismatch');
+    return;
+  }
 
-        const q0 = await Transaction.find({ userId: user._id, 'meta.reference': body?.trans_id });
-        console.log('payscribeWebhook ::: q0 :::', q0);
-        if (q0.length == 0) {
-          console.log('payscribeWebhook ::: 3');
-          const q2 = await Service.findOne({ code: 'wallet-topup' }, { _id: 1 });
-          const session = await mongoose.startSession();
-          try {
-            const transactionId = genRefNo();
-            session.startTransaction();
-            const q3 = await User.updateOne({ _id: user._id }, { $inc: { balance: totalAmount } }).session(session);
-            console.log('payscribeWebhook ::: q3 :::', q3);
-            const meta = { reference: body?.trans_id };
-            const q4 = await Transaction.create([{ userId: user._id, transactionId, serviceId: q2._id, recipient: 'wallet', unitPrice: amount, quantity: 1, amount, totalAmount, status: TRANSACTION_STATUS.DELIVERED, statusDesc: 'Wallet topup', meta }], { session });
-            console.log('payscribeWebhook ::: q4 :::', q4);
-            // console.log('q4 :::', q4);
-            if (q3?.modifiedCount == 1 && q4?.length > 0) {
-              console.log('payscribeWebhook ::: 4');
-              await session.commitTransaction();
-            }
-          } catch (error) {
-            await session.abortTransaction();
-            console.error('Error during transaction:', error);
-          } finally {
-            session.endSession();
-          }
-        }
+  const session = await mongoose.startSession();
 
+  try {
+    // 3. withTransaction handles retries for WriteConflicts automatically
+    await session.withTransaction(async () => {
+      // Find User
+      const user = await User.findOne({ 
+        'payscribeCustomer.id': body?.customer?.id, 
+        'virtualAccounts.accountNumber': body?.customer?.number 
+      }).session(session);
+
+      if (!user) return;
+
+      // 4. Idempotency Check: Move this INSIDE the transaction
+      const existingTx = await Transaction.findOne({ 
+        userId: user._id, 
+        'meta.reference': body?.trans_id 
+      }).session(session);
+
+      if (existingTx) {
+        console.log('Transaction already processed');
+        return; 
       }
-    }
+
+      const service = await Service.findOne({ code: 'wallet-topup' }).session(session);
+      const transactionId = genRefNo();
+      const amount = Number(body.amount);
+
+      // 5. Atomic Updates
+      await User.updateOne(
+        { _id: user._id }, 
+        { $inc: { balance: amount } }, 
+        { session }
+      );
+
+      await Transaction.create([{ 
+        userId: user._id, 
+        transactionId, 
+        serviceId: service._id, 
+        recipient: 'wallet', 
+        unitPrice: amount, 
+        quantity: 1, 
+        amount, 
+        totalAmount: amount, 
+        status: TRANSACTION_STATUS.DELIVERED, 
+        statusDesc: 'Wallet topup', 
+        meta: { reference: body?.trans_id } 
+      }], { session });
+
+      console.log('Wallet funded successfully');
+    });
+  } catch (error) {
+    // withTransaction already aborted the transaction if it reached here
+    console.error('Webhook Transaction Failed:', error);
+  } finally {
+    await session.endSession();
   }
 });
 
