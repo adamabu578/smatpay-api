@@ -113,13 +113,15 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
   res.sendStatus(200);
 
   const body = req.body;
+  console.log('payscribeWebhook ::: body :::', body);
   if (body.event_type !== "accounts.payment.status") return;
 
   // 2. Hash Verification
   const combination = `${process.env.PAYSCRIBE_SECRET_KEY}${body?.transaction?.sender_account}${body?.customer?.number}${body?.transaction?.bank_code}${currencyFormatter.format(body.amount)}${body?.trans_id}`;
   const sha512Hash = crypto.createHash('sha512').update(combination, 'utf8').digest('hex').toUpperCase();
+  console.log('payscribeWebhook ::: sha512Hash :::', sha512Hash);
 
-  if (sha512Hash !== body?.transaction_hash) {
+  if (sha512Hash != body?.transaction_hash) {
     console.error('Hash mismatch');
     return;
   }
