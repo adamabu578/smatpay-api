@@ -439,6 +439,7 @@ exports.listDataBundles = catchAsync(async (req, res, next) => {
 });
 
 exports.subData = catchAsync(async (req, res, next) => {
+  console.log('subData ::: req.body :::', req.body);
   const missing = pExCheck(req.body, [P.network, P.phoneNumber, P.bundleCode]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
@@ -448,8 +449,10 @@ exports.subData = catchAsync(async (req, res, next) => {
   if (!service) return next(new AppError(500, 'Invalid service'));
 
   const bundles = await getServiceVariations(`/data/bundles?provider=${req.body[P.network]}`);
+  // console.log('subData ::: bundles :::', bundles);
   if (!bundles) return next(new AppError(400, 'Cannot list bundles.'));
   const variationAmount = getAmtFromVariations(bundles, req.body[P.bundleCode]);
+  console.log('subData ::: variationAmount :::', variationAmount);
   if (!variationAmount) return next(new AppError(400, 'Invalid bundle code'));
   req.body[P.amount] = variationAmount;
 

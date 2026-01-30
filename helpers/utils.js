@@ -137,8 +137,8 @@ exports.getServiceVariations = async (endpoint) => {
 }
 
 exports.getAmtFromVariations = (variations, variationCode) => {
-    const variation = variations?.filter(i => i?.variation_code == variationCode)[0];
-    return variation?.variation_amount;
+    const variation = variations?.filter(i => i?.code == variationCode)[0];
+    return variation?.amount;
 }
 
 exports.initTransaction = async (req, service, onError, onSuccess) => {
