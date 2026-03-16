@@ -197,6 +197,8 @@ exports.signUp = catchAsync(async (req, res, next) => {
 
   req.body[P.phone] = req.body[P.phone].replace('+', ''); //in case the number starts with +
 
+  req.body[P.email] = req.body[P.email].toLowerCase();
+
   const filter = [{ 'email': req.body[P.email] }, { 'phone': req.body[P.phone] }];
 
   const q = await User.find({ $or: filter });
@@ -254,6 +256,7 @@ exports.login = catchAsync(async (req, res, next) => {
   const missing = pExCheck(req.body, [P.email, P.password]);
   if (missing.length != 0) return next(new AppError(400, 'Missing fields.', missing));
 
+  req.body[P.email] = req.body[P.email].toLowerCase();
   const user = await User.findOne({ email: req.body.email });
 
   if (!user) return next(new AppError(400, 'Invalid email and/or password'));
