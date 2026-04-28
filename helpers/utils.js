@@ -184,6 +184,8 @@ exports.initTransaction = async (req, service, onError, onSuccess) => {
             commission,
             amount: unitAmount,
             totalAmount,
+            balanceBefore: balance,
+            balanceAfter: Number(balanceAfter),
             tags: req.body?.tags
         };
         if (req.body[P.serviceVariation]) {

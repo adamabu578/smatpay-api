@@ -31,3 +31,7 @@ exports.COMMISSION = {
     'electric-ekodc': 0.0,
 };
 
+exports.ROLES = {
+    USER: 'user',
+    ADMIN: 'admin',
+};

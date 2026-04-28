@@ -8,6 +8,7 @@ const MongoStore = require('connect-mongo');
 const cors = require('cors');
 
 const router = require('./routes');
+const adminRouter = require('./routes/admin');
 const globalErrorHandler = require("./helpers/errorhandler");
 
 (async () => {
@@ -57,6 +58,7 @@ app.use(cors(corsOptions));
 const prefix = process.env.PATH_PREFIX;
 
 app.use(`/${prefix}`, router);
+app.use(`/admin`, adminRouter);
 
 app.use(globalErrorHandler);
 

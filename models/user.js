@@ -25,6 +25,16 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0.00,
     },
+    role: {
+        type: String,
+        enum: ['user', 'admin'],
+        default: 'user',
+    },
+    status: {
+        type: String,
+        enum: ['active', 'suspended'],
+        default: 'active',
+    },
     commission: {
         type: Object,
         default: COMMISSION

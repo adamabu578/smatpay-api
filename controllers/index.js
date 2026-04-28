@@ -35,10 +35,12 @@ exports.paystackWebhook = catchAsync(async (req, res, next) => {
         try {
           const transactionId = genRefNo();
           session.startTransaction();
-          const q3 = await User.updateOne({ _id: user._id }, { $inc: { balance: totalAmount } }).session(session);
+          const balanceBefore = user.balance;
+          const balanceAfter = balanceBefore + totalAmount;
+          const q3 = await User.updateOne({ _id: user._id }, { balance: balanceAfter }).session(session);
           // console.log('q3 :::', q3);
           const respObj = { reference: body?.data?.reference };
-          const q4 = await Transaction.create([{ userId: user._id, transactionId, serviceId: q2._id, recipient: 'wallet', unitPrice: amount, quantity: 1, amount, totalAmount, status: TRANSACTION_STATUS.DELIVERED, statusDesc: 'Wallet topup', respObj }], { session });
+          const q4 = await Transaction.create([{ userId: user._id, transactionId, serviceId: q2._id, recipient: 'wallet', unitPrice: amount, quantity: 1, amount, totalAmount, balanceBefore, balanceAfter, status: TRANSACTION_STATUS.DELIVERED, statusDesc: 'Wallet topup', respObj }], { session });
           // console.log('q4 :::', q4);
           if (q3?.modifiedCount == 1 && q4?.length > 0) {
             await session.commitTransaction();
@@ -154,10 +156,13 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
       const transactionId = genRefNo();
       const amount = Number(body.amount);
 
+      const balanceBefore = user.balance;
+      const balanceAfter = balanceBefore + amount;
+
       // 5. Atomic Updates
       await User.updateOne(
         { _id: user._id }, 
-        { $inc: { balance: amount } }, 
+        { balance: balanceAfter }, 
         { session }
       );
 
@@ -170,6 +175,8 @@ exports.payscribeWebhook = catchAsync(async (req, res, next) => {
         quantity: 1, 
         amount, 
         totalAmount: amount, 
+        balanceBefore,
+        balanceAfter,
         status: TRANSACTION_STATUS.DELIVERED, 
         statusDesc: 'Wallet topup', 
         meta: { reference: body?.trans_id } 
@@ -248,6 +255,8 @@ const afterLogin = async (req, res, user) => {
   const payload = { id: user._id.toHexString(), token: secret };
 
   const token = jwt.sign({ payload }, process.env.AUTH_SECRET);
+
+  req.session.token = token;
 
   res.status(200).json({ status: "success", msg: "Logged in", token });
 }

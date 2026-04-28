@@ -44,14 +44,14 @@ const transactionSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    // balanceBefore: {
-    //     type: Number,
-    //     required: true
-    // },
-    // balanceAfter: {
-    //     type: Number,
-    //     required: true
-    // },
+    balanceBefore: {
+        type: Number,
+        required: true
+    },
+    balanceAfter: {
+        type: Number,
+        required: true
+    },
     // scheduleId: {
     //     type: mongoose.Types.ObjectId,
     // },
