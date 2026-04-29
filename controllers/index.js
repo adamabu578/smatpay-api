@@ -293,7 +293,6 @@ exports.sendPwdResetMail = catchAsync(async (req, res, next) => {
     ? process.env.ADMIN_URL 
     : process.env.WEB_URL;
   const link = `${baseUrl}/reset-password?token=${token}`;
-  console.log('RESET LINK:', link);
 
   sendEmail(req.body[P.email], 'Forgot Password', `Kindly click <a href="${link}">here</a> to reset your password<br><br>Link expires in 30 mins.`);
 
