@@ -284,14 +284,18 @@ exports.sendPwdResetMail = catchAsync(async (req, res, next) => {
   const resetPwdToken = uid(35);
   const payload = { email: req.body[P.email], token: resetPwdToken };
 
-  const q = await User.updateOne({ email: payload[P.email] }, { resetPwdToken });
+  const q = await User.updateOne({ email: payload[P.email], role: 'admin' }, { resetPwdToken });
   if (q?.modifiedCount != 1) return next(new AppError(400, 'Account error.'));
 
   const token = jwt.sign({ payload }, process.env.UNAUTH_SECRET, { expiresIn: 60 * 30 }); //Expires in 30 mins
 
-  const link = `${process.env.WEB_URL}/reset-password?token=${token}`;
+  const baseUrl = req.headers.origin === process.env.ADMIN_URL 
+    ? process.env.ADMIN_URL 
+    : process.env.WEB_URL;
+  const link = `${baseUrl}/reset-password?token=${token}`;
+  console.log('RESET LINK:', link);
 
-  await sendEmail(req.body[P.email], 'Forgot Password', `Kindly click <a href="${link}">here</a> to reset your password<br><br>Link expires in 30 mins.`);
+  sendEmail(req.body[P.email], 'Forgot Password', `Kindly click <a href="${link}">here</a> to reset your password<br><br>Link expires in 30 mins.`);
 
   res.status(200).json({ status: 'success', msg: 'We have sent you a mail. Link expires in 30 mins.' });
 });
@@ -302,7 +306,7 @@ exports.setPassword = catchAsync(async (req, res, next) => {
 
   const { payload } = jwt.verify(req.body[P.token], process.env.UNAUTH_SECRET);
 
-  const user = await User.findOne({ email: payload[P.email] });
+  const user = await User.findOne({ email: payload[P.email], role: 'admin' });
 
   if (!user) return next(new AppError(400, 'Invalid account'));
   if (user?.resetPwdToken != payload.token) return next(new AppError(400, 'Invalid token'));
@@ -317,10 +321,10 @@ exports.setPassword = catchAsync(async (req, res, next) => {
 });
 
 
-// exports.logout = catchAsync(async (req, res, next) => {
-//   req.session.destroy();
-//   res.status(200).json({ status: 'success', msg: 'Logged out' });
-// });
+exports.logout = catchAsync(async (req, res, next) => {
+  req.session.destroy();
+  res.status(200).json({ status: 'success', msg: 'Logged out' });
+});
 
 exports.profile = catchAsync(async (req, res, next) => {
   const q = await User.aggregate([
